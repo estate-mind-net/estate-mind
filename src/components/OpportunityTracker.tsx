@@ -11,7 +11,11 @@ import {
   X,
   CaretDown,
   Brain,
-  CheckCircle
+  CheckCircle,
+  Archive,
+  FileArrowDown,
+  TagSimple,
+  Trash
 } from '@phosphor-icons/react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScoreGauge } from './ScoreGauge'
 import { mockOpportunities } from '@/lib/mockData'
 import type { Opportunity, OpportunityStatus } from '@/lib/types'
@@ -67,6 +72,7 @@ const allTags = [
 
 export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerProps) {
   const [opportunities, setOpportunities] = useKV<Opportunity[]>('opportunities', mockOpportunities)
+  const [archivedOpportunities, setArchivedOpportunities] = useKV<Opportunity[]>('archived-opportunities', [])
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('all')
   const [sortField, setSortField] = useState<SortField>('updatedAt')
@@ -75,6 +81,10 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   const [priceRange, setPriceRange] = useState<{ min: number; max: number }>({ min: 0, max: 10000000 })
   const [selectedCountries, setSelectedCountries] = useState<string[]>([])
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
+  const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([])
+  const [showBulkTagDialog, setShowBulkTagDialog] = useState(false)
+  const [bulkTagsToAdd, setBulkTagsToAdd] = useState<string[]>([])
+  const [showExportDialog, setShowExportDialog] = useState(false)
 
   const uniqueCountries = useMemo(() => {
     if (!opportunities) return []
@@ -224,8 +234,118 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
 
   const hasActiveFilters = searchQuery || selectedTags.length > 0 || selectedCountries.length > 0 || selectedTypes.length > 0 || priceRange.min > 0 || priceRange.max < 10000000
 
-  const handleExport = () => {
-    toast.success('Export feature coming soon')
+  const handleSelectAll = () => {
+    if (selectedOpportunityIds.length === filteredAndSortedOpportunities.length) {
+      setSelectedOpportunityIds([])
+    } else {
+      setSelectedOpportunityIds(filteredAndSortedOpportunities.map(o => o.id))
+    }
+  }
+
+  const handleSelectOpportunity = (id: string) => {
+    setSelectedOpportunityIds(current =>
+      current.includes(id)
+        ? current.filter(oppId => oppId !== id)
+        : [...current, id]
+    )
+  }
+
+  const handleBulkArchive = () => {
+    if (selectedOpportunityIds.length === 0) return
+
+    const selected = opportunities?.filter(o => selectedOpportunityIds.includes(o.id)) ?? []
+    
+    setArchivedOpportunities(current => [
+      ...(current ?? []),
+      ...selected.map(o => ({ ...o, updatedAt: new Date().toISOString() }))
+    ])
+
+    setOpportunities(current =>
+      current?.filter(o => !selectedOpportunityIds.includes(o.id)) ?? []
+    )
+
+    toast.success(`Archived ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}`)
+    setSelectedOpportunityIds([])
+  }
+
+  const handleBulkExport = (format: 'csv' | 'json') => {
+    if (selectedOpportunityIds.length === 0) return
+
+    const selected = opportunities?.filter(o => selectedOpportunityIds.includes(o.id)) ?? []
+
+    if (format === 'json') {
+      const dataStr = JSON.stringify(selected, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(dataBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `opportunities-export-${new Date().toISOString().split('T')[0]}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      toast.success('Exported as JSON')
+    } else {
+      const headers = ['Title', 'Country', 'City', 'Type', 'Price', 'Size (m²)', 'Bedrooms', 'Status', 'Tags', 'AI Score', 'Yield %']
+      const rows = selected.map(o => [
+        o.property.title,
+        o.property.country,
+        o.property.city,
+        o.property.propertyType,
+        `${o.property.currency} ${o.property.askingPrice}`,
+        o.property.sizeSqm,
+        o.property.bedrooms,
+        o.status,
+        o.tags.join('; '),
+        o.analysis?.score.overall ?? 'N/A',
+        o.analysis?.rentalYieldEstimate.percentage ?? 'N/A'
+      ])
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n')
+
+      const dataBlob = new Blob([csvContent], { type: 'text/csv' })
+      const url = URL.createObjectURL(dataBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `opportunities-export-${new Date().toISOString().split('T')[0]}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+      toast.success('Exported as CSV')
+    }
+
+    setShowExportDialog(false)
+  }
+
+  const handleBulkAddTags = () => {
+    if (selectedOpportunityIds.length === 0 || bulkTagsToAdd.length === 0) return
+
+    setOpportunities(current =>
+      current?.map(o => {
+        if (selectedOpportunityIds.includes(o.id)) {
+          const newTags = Array.from(new Set([...o.tags, ...bulkTagsToAdd]))
+          return { ...o, tags: newTags, updatedAt: new Date().toISOString() }
+        }
+        return o
+      }) ?? []
+    )
+
+    toast.success(`Added ${bulkTagsToAdd.length} ${bulkTagsToAdd.length === 1 ? 'tag' : 'tags'} to ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}`)
+    setSelectedOpportunityIds([])
+    setBulkTagsToAdd([])
+    setShowBulkTagDialog(false)
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedOpportunityIds.length === 0) return
+    if (!confirm(`Are you sure you want to permanently delete ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}?`)) return
+
+    setOpportunities(current =>
+      current?.filter(o => !selectedOpportunityIds.includes(o.id)) ?? []
+    )
+
+    toast.success(`Deleted ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}`)
+    setSelectedOpportunityIds([])
   }
 
   return (
@@ -239,16 +359,46 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
           <p className="mt-2 text-foreground/70">Manage your investment pipeline with advanced filters</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={handleExport} variant="outline">
-            <Export className="mr-2 h-5 w-5" />
-            Export
-          </Button>
           <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90">
             <Plus className="mr-2 h-5 w-5" />
             Add Opportunity
           </Button>
         </div>
       </div>
+
+      {selectedOpportunityIds.length > 0 && (
+        <Card className="border-accent bg-accent/5 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="h-5 w-5 text-accent" weight="fill" />
+              <span className="font-semibold">
+                {selectedOpportunityIds.length} {selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={handleBulkArchive} variant="outline" size="sm">
+                <Archive className="mr-2 h-4 w-4" />
+                Archive
+              </Button>
+              <Button onClick={() => setShowExportDialog(true)} variant="outline" size="sm">
+                <FileArrowDown className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+              <Button onClick={() => setShowBulkTagDialog(true)} variant="outline" size="sm">
+                <TagSimple className="mr-2 h-4 w-4" />
+                Add Tags
+              </Button>
+              <Button onClick={handleBulkDelete} variant="destructive" size="sm">
+                <Trash className="mr-2 h-4 w-4" />
+                Delete
+              </Button>
+              <Button onClick={() => setSelectedOpportunityIds([])} variant="ghost" size="sm">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="p-6">
         <div className="space-y-4">
@@ -483,10 +633,29 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
             </Card>
           ) : (
             <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox 
+                    checked={selectedOpportunityIds.length === filteredAndSortedOpportunities.length && filteredAndSortedOpportunities.length > 0}
+                    onCheckedChange={handleSelectAll}
+                  />
+                  <span className="text-sm font-medium">
+                    Select All ({filteredAndSortedOpportunities.length})
+                  </span>
+                </label>
+                {selectedOpportunityIds.length > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {selectedOpportunityIds.length} selected
+                  </span>
+                )}
+              </div>
+
               {filteredAndSortedOpportunities.map((opp) => (
                 <Card 
                   key={opp.id}
-                  className="group relative overflow-hidden transition-all hover:border-accent/50 hover:shadow-lg"
+                  className={`group relative overflow-hidden transition-all hover:border-accent/50 hover:shadow-lg ${
+                    selectedOpportunityIds.includes(opp.id) ? 'border-accent bg-accent/5' : ''
+                  }`}
                 >
                   <div 
                     className="absolute left-0 top-0 h-full w-1 transition-all"
@@ -494,7 +663,13 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                   />
                   
                   <div className="p-6 pl-8">
-                    <div className="flex items-start gap-6">
+                    <div className="flex items-start gap-4">
+                      <Checkbox 
+                        checked={selectedOpportunityIds.includes(opp.id)}
+                        onCheckedChange={() => handleSelectOpportunity(opp.id)}
+                        className="mt-1"
+                      />
+                      
                       <div className="flex-1">
                         <div className="flex items-start justify-between gap-4">
                           <div 
@@ -681,6 +856,97 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
           </div>
         </div>
       </Card>
+
+      <Dialog open={showBulkTagDialog} onOpenChange={setShowBulkTagDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Tags to Selected Opportunities</DialogTitle>
+            <DialogDescription>
+              Select tags to add to {selectedOpportunityIds.length} {selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="h-64">
+            <div className="space-y-2">
+              {allTags.map((tag) => (
+                <label key={tag} className="flex items-center gap-2 cursor-pointer rounded-lg border p-3 hover:bg-muted/50">
+                  <Checkbox 
+                    checked={bulkTagsToAdd.includes(tag)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setBulkTagsToAdd([...bulkTagsToAdd, tag])
+                      } else {
+                        setBulkTagsToAdd(bulkTagsToAdd.filter(t => t !== tag))
+                      }
+                    }}
+                  />
+                  <span className="text-sm capitalize">{tag.replace('-', ' ')}</span>
+                </label>
+              ))}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkTagDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkAddTags}
+              disabled={bulkTagsToAdd.length === 0}
+              className="bg-accent text-accent-foreground hover:bg-accent/90"
+            >
+              <TagSimple className="mr-2 h-4 w-4" />
+              Add {bulkTagsToAdd.length} {bulkTagsToAdd.length === 1 ? 'Tag' : 'Tags'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export Selected Opportunities</DialogTitle>
+            <DialogDescription>
+              Choose format to export {selectedOpportunityIds.length} {selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <Button 
+              onClick={() => handleBulkExport('csv')}
+              variant="outline"
+              className="w-full justify-start h-auto p-4"
+            >
+              <div className="flex items-start gap-3 text-left">
+                <FileArrowDown className="h-5 w-5 mt-0.5 text-accent" />
+                <div>
+                  <div className="font-semibold">Export as CSV</div>
+                  <div className="text-sm text-muted-foreground">
+                    Download a spreadsheet-compatible file with key property details
+                  </div>
+                </div>
+              </div>
+            </Button>
+            <Button 
+              onClick={() => handleBulkExport('json')}
+              variant="outline"
+              className="w-full justify-start h-auto p-4"
+            >
+              <div className="flex items-start gap-3 text-left">
+                <FileArrowDown className="h-5 w-5 mt-0.5 text-accent" />
+                <div>
+                  <div className="font-semibold">Export as JSON</div>
+                  <div className="text-sm text-muted-foreground">
+                    Download complete data including all analysis details
+                  </div>
+                </div>
+              </div>
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
