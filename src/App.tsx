@@ -6,6 +6,7 @@ import { DealAnalyzer } from '@/components/DealAnalyzer'
 import { InvestmentReport } from '@/components/InvestmentReport'
 import { PricingPage } from '@/components/PricingPage'
 import { PortfolioAnalytics } from '@/components/PortfolioAnalytics'
+import { OpportunityTracker } from '@/components/OpportunityTracker'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import type { Property, InvestmentAnalysis } from '@/lib/types'
 
@@ -38,10 +39,21 @@ function App() {
       
       {currentPage === 'pricing' && <PricingPage onNavigate={handleNavigate} />}
       
-      {(currentPage === 'dashboard' || currentPage === 'opportunities') && (
+      {(currentPage === 'dashboard' || currentPage === 'opportunities') && currentPage === 'dashboard' && (
         <div className="min-h-screen bg-background p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <Dashboard onNavigate={handleNavigate} />
+          </div>
+        </div>
+      )}
+
+      {currentPage === 'opportunities' && (
+        <div className="min-h-screen bg-background p-6 lg:p-8">
+          <div className="mx-auto max-w-7xl">
+            <OpportunityTracker 
+              onNavigate={handleNavigate} 
+              onBack={() => handleNavigate('dashboard')}
+            />
           </div>
         </div>
       )}

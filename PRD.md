@@ -41,11 +41,11 @@ This is a multi-featured investment intelligence platform with distinct sections
 - **Success criteria**: Information-dense but readable layout, key metrics immediately visible, Bloomberg Terminal aesthetic
 
 ### 5. Opportunity Tracker
-- **Functionality**: Saved property pipeline with status management, filtering, and organization
-- **Purpose**: Help investors organize and track multiple investment opportunities through different stages
-- **Trigger**: User navigates to opportunities section or saves a property from analyzer
-- **Progression**: Opportunity list display → Filter/sort → Status update → Add notes → Tag management → Opportunity detail view
-- **Success criteria**: Clean table/card layout, intuitive status workflow, easy filtering and organization
+- **Functionality**: Advanced opportunity management with filtering, sorting, and status workflow
+- **Purpose**: Help investors organize, track, and manage multiple investment opportunities through different deal stages with powerful filtering capabilities
+- **Trigger**: User navigates to opportunities section from dashboard or saves a property
+- **Progression**: Opportunity list display → Advanced filters (tags, countries, property types) → Multi-tab status view → Search and sort → Status update → View analysis
+- **Success criteria**: Comprehensive filtering system, intuitive status management dropdown, persistent data with useKV, tab-based status navigation, real-time search, empty state handling, summary metrics card
 
 ### 6. Property Comparison
 - **Functionality**: Side-by-side comparison of multiple investment opportunities across key metrics
