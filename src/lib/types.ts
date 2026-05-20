@@ -1,6 +1,6 @@
 export type PropertyType = 'apartment' | 'villa' | 'house' | 'land' | 'commercial' | 'mixed-use'
 export type PropertyCondition = 'new' | 'excellent' | 'good' | 'needs-renovation' | 'under-construction'
-export type OpportunityStatus = 'new' | 'watching' | 'due-diligence' | 'offer' | 'negotiation' | 'acquired' | 'rejected'
+export type OpportunityStatus = 'new-opportunity' | 'initial-analysis' | 'watching' | 'due-diligence' | 'negotiation' | 'acquired' | 'rejected'
 export type InvestmentRecommendation = 'buy' | 'watch' | 'avoid'
 
 export interface Property {
@@ -89,4 +89,62 @@ export interface DashboardMetrics {
   portfolioValue: number
   activeDeals: number
   analyzedThisMonth: number
+}
+
+export interface AIInsight {
+  id: string
+  type: 'opportunity' | 'risk' | 'market' | 'financial'
+  priority: 'high' | 'medium' | 'low'
+  title: string
+  description: string
+  propertyId?: string
+  actionable: boolean
+  createdAt: string
+}
+
+export interface LocationIntelligence {
+  district: string
+  city: string
+  country: string
+  scores: {
+    appreciation: number
+    rentalDemand: number
+    tourismDemand: number
+    liquidity: number
+    infrastructureGrowth: number
+    overall: number
+  }
+  trends: {
+    priceGrowth1Y: number
+    priceGrowth3Y: number
+    rentalYieldTrend: string
+  }
+  summary: string
+}
+
+export interface Document {
+  id: string
+  propertyId: string
+  name: string
+  type: 'legal' | 'permit' | 'ownership' | 'renovation' | 'contract' | 'other'
+  uploadedAt: string
+  aiSummary?: string
+  detectedRisks?: string[]
+  status: 'pending' | 'reviewed' | 'approved' | 'flagged'
+}
+
+export interface PortfolioMetrics {
+  totalValue: number
+  projectedCashFlow: number
+  averageYield: number
+  riskExposure: {
+    low: number
+    medium: number
+    high: number
+  }
+  geographicDistribution: {
+    country: string
+    value: number
+    properties: number
+  }[]
 }

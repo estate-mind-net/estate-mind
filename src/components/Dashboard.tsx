@@ -1,10 +1,11 @@
-import { Brain, TrendUp, ChartLine, Target, Buildings, Wallet } from '@phosphor-icons/react'
+import { Brain, TrendUp, ChartLine, Target, Buildings, Wallet, Kanban } from '@phosphor-icons/react'
 import { MetricCard } from './MetricCard'
 import { ScoreGauge } from './ScoreGauge'
+import { AIInsightCard } from './AIInsightCard'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { mockDashboardMetrics, mockOpportunities } from '@/lib/mockData'
+import { mockDashboardMetrics, mockOpportunities, mockAIInsights } from '@/lib/mockData'
 import type { OpportunityStatus } from '@/lib/types'
 
 interface DashboardProps {
@@ -12,10 +13,10 @@ interface DashboardProps {
 }
 
 const statusConfig: Record<OpportunityStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  'new': { label: 'New', variant: 'secondary' },
+  'new-opportunity': { label: 'New', variant: 'secondary' },
+  'initial-analysis': { label: 'Analyzing', variant: 'outline' },
   'watching': { label: 'Watching', variant: 'outline' },
   'due-diligence': { label: 'Due Diligence', variant: 'default' },
-  'offer': { label: 'Offer', variant: 'default' },
   'negotiation': { label: 'Negotiation', variant: 'default' },
   'acquired': { label: 'Acquired', variant: 'default' },
   'rejected': { label: 'Rejected', variant: 'destructive' }
@@ -23,18 +24,23 @@ const statusConfig: Record<OpportunityStatus, { label: string; variant: 'default
 
 export function Dashboard({ onNavigate }: DashboardProps) {
   const metrics = mockDashboardMetrics
+  const insights = mockAIInsights.slice(0, 3)
 
   return (
     <div className="space-y-6 sm:space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Investment Dashboard</h1>
-          <p className="mt-2 text-sm sm:text-base text-foreground/70">Track your real estate investment pipeline</p>
+          <p className="mt-2 text-sm sm:text-base text-foreground/70">AI-powered investment intelligence</p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          <Button onClick={() => onNavigate('pipeline')} variant="outline" className="w-full sm:w-auto">
+            <Kanban className="mr-2 h-5 w-5" />
+            Pipeline
+          </Button>
           <Button onClick={() => onNavigate('analytics')} variant="outline" className="w-full sm:w-auto">
             <ChartLine className="mr-2 h-5 w-5" />
-            Portfolio Analytics
+            Analytics
           </Button>
           <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
             <Brain className="mr-2 h-5 w-5" />
@@ -141,28 +147,24 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <div className="space-y-4 sm:space-y-6">
           <Card className="p-4 sm:p-6">
             <div className="mb-4 flex items-center gap-2">
-              <ChartLine className="h-5 w-5 text-accent" weight="duotone" />
+              <Brain className="h-5 w-5 text-accent" weight="duotone" />
               <h2 className="font-display text-lg sm:text-xl font-bold">AI Insights</h2>
             </div>
-            <div className="space-y-3 sm:space-y-4">
-              <div className="rounded-lg border border-success/30 bg-success/10 p-3">
-                <p className="text-xs sm:text-sm font-medium text-success">Strong Buy Signal</p>
-                <p className="mt-1 text-xs text-foreground/70">
-                  Lisbon city center properties showing 15% YoY appreciation
-                </p>
-              </div>
-              <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
-                <p className="text-xs sm:text-sm font-medium text-warning">Market Watch</p>
-                <p className="mt-1 text-xs text-foreground/70">
-                  Athens coastal villas entering high season pricing
-                </p>
-              </div>
-              <div className="rounded-lg border border-accent/30 bg-accent/10 p-3">
-                <p className="text-xs sm:text-sm font-medium text-accent">New Opportunity</p>
-                <p className="mt-1 text-xs text-foreground/70">
-                  3 new properties match your investment criteria
-                </p>
-              </div>
+            <div className="space-y-3">
+              {insights.map((insight) => (
+                <AIInsightCard
+                  key={insight.id}
+                  insight={insight}
+                  onClick={() => {
+                    if (insight.propertyId) {
+                      const opp = mockOpportunities.find(o => o.property.id === insight.propertyId)
+                      if (opp?.analysis) {
+                        onNavigate('report', opp.analysis)
+                      }
+                    }
+                  }}
+                />
+              ))}
             </div>
           </Card>
 

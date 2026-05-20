@@ -39,17 +39,17 @@ interface OpportunityTrackerProps {
 
 type SortField = 'score' | 'price' | 'yield' | 'updatedAt' | 'savedAt'
 type SortDirection = 'asc' | 'desc'
-type ViewMode = 'all' | 'new' | 'watching' | 'due-diligence' | 'offer' | 'negotiation' | 'acquired' | 'rejected'
+type ViewMode = 'all' | 'new-opportunity' | 'initial-analysis' | 'watching' | 'due-diligence' | 'negotiation' | 'acquired' | 'rejected'
 
 const statusConfig: Record<OpportunityStatus, { 
   label: string
   variant: 'default' | 'secondary' | 'destructive' | 'outline'
   color: string 
 }> = {
-  'new': { label: 'New', variant: 'secondary', color: 'oklch(0.75 0.15 195)' },
+  'new-opportunity': { label: 'New', variant: 'secondary', color: 'oklch(0.75 0.15 195)' },
+  'initial-analysis': { label: 'Initial Analysis', variant: 'outline', color: 'oklch(0.65 0.15 270)' },
   'watching': { label: 'Watching', variant: 'outline', color: 'oklch(0.75 0.15 75)' },
   'due-diligence': { label: 'Due Diligence', variant: 'default', color: 'oklch(0.35 0.15 270)' },
-  'offer': { label: 'Offer', variant: 'default', color: 'oklch(0.75 0.15 195)' },
   'negotiation': { label: 'Negotiation', variant: 'default', color: 'oklch(0.75 0.15 75)' },
   'acquired': { label: 'Acquired', variant: 'default', color: 'oklch(0.65 0.18 145)' },
   'rejected': { label: 'Rejected', variant: 'destructive', color: 'oklch(0.60 0.22 25)' }
@@ -172,10 +172,10 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   const statusCounts = useMemo(() => {
     const counts: Record<OpportunityStatus | 'all', number> = {
       all: opportunities?.length ?? 0,
-      new: 0,
+      'new-opportunity': 0,
+      'initial-analysis': 0,
       watching: 0,
       'due-diligence': 0,
-      offer: 0,
       negotiation: 0,
       acquired: 0,
       rejected: 0
@@ -548,11 +548,20 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                 {statusCounts.all}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="new" className="relative whitespace-nowrap">
+            <TabsTrigger value="new-opportunity" className="relative whitespace-nowrap">
               New
-              {statusCounts.new > 0 && (
+              {statusCounts['new-opportunity'] > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts.new}
+                  {statusCounts['new-opportunity']}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="initial-analysis" className="whitespace-nowrap">
+              <span className="hidden sm:inline">Initial Analysis</span>
+              <span className="sm:hidden">Analysis</span>
+              {statusCounts['initial-analysis'] > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts['initial-analysis']}
                 </Badge>
               )}
             </TabsTrigger>
@@ -570,14 +579,6 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
               {statusCounts['due-diligence'] > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
                   {statusCounts['due-diligence']}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="offer" className="whitespace-nowrap">
-              Offer
-              {statusCounts.offer > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts.offer}
                 </Badge>
               )}
             </TabsTrigger>
@@ -847,7 +848,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
               <span className="text-xs sm:text-sm">Active Deals</span>
             </div>
             <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">
-              {statusCounts['due-diligence'] + statusCounts.offer + statusCounts.negotiation}
+              {statusCounts['due-diligence'] + statusCounts.negotiation}
             </p>
           </div>
 

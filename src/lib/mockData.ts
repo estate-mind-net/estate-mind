@@ -226,7 +226,7 @@ export const mockOpportunities: Opportunity[] = [
   {
     id: 'o3',
     property: mockProperties[2],
-    status: 'new',
+    status: 'new-opportunity',
     tags: ['value-add', 'student-rental'],
     notes: 'Initial analysis pending. Requested renovation quotes.',
     savedAt: '2024-01-08T10:00:00Z',
@@ -235,7 +235,7 @@ export const mockOpportunities: Opportunity[] = [
   {
     id: 'o4',
     property: mockProperties[3],
-    status: 'offer',
+    status: 'negotiation',
     tags: ['luxury', 'new-build', 'airbnb'],
     notes: 'Submitted offer at 1.18M. Awaiting response. Due diligence docs ready.',
     savedAt: '2024-01-05T17:00:00Z',
@@ -251,3 +251,67 @@ export const mockDashboardMetrics: DashboardMetrics = {
   activeDeals: 3,
   analyzedThisMonth: 8
 }
+
+export const mockAIInsights: import('./types').AIInsight[] = [
+  {
+    id: 'ai1',
+    type: 'opportunity',
+    priority: 'high',
+    title: 'Property may be undervalued by 12%',
+    description: 'Our AI model detected that the Lisbon apartment is priced 12% below market comparables in the Príncipe Real district based on recent sales data.',
+    propertyId: '1',
+    actionable: true,
+    createdAt: '2024-01-18T09:00:00Z'
+  },
+  {
+    id: 'ai2',
+    type: 'market',
+    priority: 'high',
+    title: 'High Airbnb demand detected in Athens',
+    description: 'Vouliagmeni area showing 40% YoY increase in Airbnb bookings. Average daily rates up 18%. Strong summer season projected.',
+    propertyId: '2',
+    actionable: true,
+    createdAt: '2024-01-18T08:30:00Z'
+  },
+  {
+    id: 'ai3',
+    type: 'opportunity',
+    priority: 'medium',
+    title: 'Renovation upside identified',
+    description: 'Barcelona apartment renovation could increase value by €60k with €25k investment. ROI potential: 140%. Kitchen and bathroom upgrades recommended.',
+    propertyId: '3',
+    actionable: true,
+    createdAt: '2024-01-17T15:20:00Z'
+  },
+  {
+    id: 'ai4',
+    type: 'risk',
+    priority: 'high',
+    title: 'Legal/documentation review recommended',
+    description: 'Property ownership history shows complex chain. Title insurance and legal due diligence strongly advised before proceeding.',
+    propertyId: '3',
+    actionable: true,
+    createdAt: '2024-01-17T14:00:00Z'
+  },
+  {
+    id: 'ai5',
+    type: 'opportunity',
+    priority: 'medium',
+    title: 'Energy upgrade ROI appears attractive',
+    description: 'Solar panel installation estimated €12k, projected savings €2,400/year. Payback: 5 years. Increases property value and rental appeal.',
+    propertyId: '2',
+    actionable: false,
+    createdAt: '2024-01-16T11:45:00Z'
+  },
+  {
+    id: 'ai6',
+    type: 'market',
+    priority: 'medium',
+    title: 'Area appreciation trend increasing',
+    description: 'Príncipe Real district appreciation accelerating: 6.5% last 12 months vs 4.2% city average. New metro extension announced for 2026.',
+    propertyId: '1',
+    actionable: false,
+    createdAt: '2024-01-16T10:00:00Z'
+  }
+]
+
