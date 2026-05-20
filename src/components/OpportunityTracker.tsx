@@ -349,17 +349,17 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Button variant="ghost" onClick={onBack} className="mb-2 -ml-2">
             ← Back to Dashboard
           </Button>
-          <h1 className="font-display text-4xl font-bold tracking-tight">Opportunity Tracker</h1>
-          <p className="mt-2 text-foreground/70">Manage your investment pipeline with advanced filters</p>
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Opportunity Tracker</h1>
+          <p className="mt-2 text-sm sm:text-base text-foreground/70">Manage your investment pipeline with advanced filters</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+          <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
             <Plus className="mr-2 h-5 w-5" />
             Add Opportunity
           </Button>
@@ -367,30 +367,30 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
       </div>
 
       {selectedOpportunityIds.length > 0 && (
-        <Card className="border-accent bg-accent/5 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="h-5 w-5 text-accent" weight="fill" />
-              <span className="font-semibold">
+        <Card className="border-accent bg-accent/5 p-3 sm:p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <CheckCircle className="h-5 w-5 text-accent flex-shrink-0" weight="fill" />
+              <span className="font-semibold text-sm sm:text-base">
                 {selectedOpportunityIds.length} {selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'} selected
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button onClick={handleBulkArchive} variant="outline" size="sm">
-                <Archive className="mr-2 h-4 w-4" />
-                Archive
+                <Archive className="mr-1 sm:mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">Archive</span>
               </Button>
               <Button onClick={() => setShowExportDialog(true)} variant="outline" size="sm">
-                <FileArrowDown className="mr-2 h-4 w-4" />
-                Export
+                <FileArrowDown className="mr-1 sm:mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">Export</span>
               </Button>
               <Button onClick={() => setShowBulkTagDialog(true)} variant="outline" size="sm">
-                <TagSimple className="mr-2 h-4 w-4" />
-                Add Tags
+                <TagSimple className="mr-1 sm:mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">Add Tags</span>
               </Button>
               <Button onClick={handleBulkDelete} variant="destructive" size="sm">
-                <Trash className="mr-2 h-4 w-4" />
-                Delete
+                <Trash className="mr-1 sm:mr-2 h-4 w-4" />
+                <span className="hidden sm:inline">Delete</span>
               </Button>
               <Button onClick={() => setSelectedOpportunityIds([])} variant="ghost" size="sm">
                 <X className="h-4 w-4" />
@@ -400,16 +400,16 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
         </Card>
       )}
 
-      <Card className="p-6">
+      <Card className="p-4 sm:p-6">
         <div className="space-y-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative flex-1">
-              <MagnifyingGlass className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              <MagnifyingGlass className="absolute left-3 top-1/2 h-4 w-4 sm:h-5 sm:w-5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search by title, location, or notes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-9 sm:pl-10 text-sm sm:text-base"
               />
             </div>
 
@@ -418,7 +418,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2">
                     <Funnel className="h-4 w-4" />
-                    Filters
+                    <span className="hidden sm:inline">Filters</span>
                     {hasActiveFilters && (
                       <Badge variant="secondary" className="ml-1 h-5 px-1 text-xs">
                         {[selectedTags.length, selectedCountries.length, selectedTypes.length].filter(n => n > 0).length}
@@ -489,8 +489,8 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
               </Popover>
 
               <Select value={sortField} onValueChange={(value) => setSortField(value as SortField)}>
-                <SelectTrigger className="w-40">
-                  <ArrowsDownUp className="mr-2 h-4 w-4" />
+                <SelectTrigger className="w-32 sm:w-40">
+                  <ArrowsDownUp className="mr-1 sm:mr-2 h-4 w-4" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -515,7 +515,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
 
           {hasActiveFilters && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Active filters:</span>
+              <span className="text-xs sm:text-sm text-muted-foreground">Active filters:</span>
               {selectedTags.map(tag => (
                 <Badge key={tag} variant="secondary" className="gap-1">
                   {tag}
@@ -540,70 +540,74 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
       </Card>
 
       <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
-        <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8">
-          <TabsTrigger value="all" className="relative">
-            All
-            <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-              {statusCounts.all}
-            </Badge>
-          </TabsTrigger>
-          <TabsTrigger value="new" className="relative">
-            New
-            {statusCounts.new > 0 && (
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <TabsList className="inline-flex w-auto min-w-full sm:grid sm:w-full sm:grid-cols-4 lg:grid-cols-8">
+            <TabsTrigger value="all" className="relative whitespace-nowrap">
+              All
               <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts.new}
+                {statusCounts.all}
               </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="watching">
-            Watching
-            {statusCounts.watching > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts.watching}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="due-diligence">
-            Due Diligence
-            {statusCounts['due-diligence'] > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts['due-diligence']}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="offer">
-            Offer
-            {statusCounts.offer > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts.offer}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="negotiation">
-            Negotiation
-            {statusCounts.negotiation > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts.negotiation}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="acquired">
-            Acquired
-            {statusCounts.acquired > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts.acquired}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="rejected">
-            Rejected
-            {statusCounts.rejected > 0 && (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                {statusCounts.rejected}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
+            </TabsTrigger>
+            <TabsTrigger value="new" className="relative whitespace-nowrap">
+              New
+              {statusCounts.new > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.new}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="watching" className="whitespace-nowrap">
+              Watching
+              {statusCounts.watching > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.watching}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="due-diligence" className="whitespace-nowrap">
+              <span className="hidden sm:inline">Due Diligence</span>
+              <span className="sm:hidden">DD</span>
+              {statusCounts['due-diligence'] > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts['due-diligence']}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="offer" className="whitespace-nowrap">
+              Offer
+              {statusCounts.offer > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.offer}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="negotiation" className="whitespace-nowrap">
+              <span className="hidden sm:inline">Negotiation</span>
+              <span className="sm:hidden">Neg.</span>
+              {statusCounts.negotiation > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.negotiation}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="acquired" className="whitespace-nowrap">
+              Acquired
+              {statusCounts.acquired > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.acquired}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="rejected" className="whitespace-nowrap">
+              Rejected
+              {statusCounts.rejected > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.rejected}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value={viewMode} className="mt-6">
           {filteredAndSortedOpportunities.length === 0 ? (
@@ -817,42 +821,42 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
         </TabsContent>
       </Tabs>
 
-      <Card className="p-6">
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      <Card className="p-4 sm:p-6">
+        <div className="grid gap-4 sm:gap-6 grid-cols-2 lg:grid-cols-4">
           <div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <CheckCircle className="h-5 w-5" weight="duotone" />
-              <span className="text-sm">Total Opportunities</span>
+              <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" weight="duotone" />
+              <span className="text-xs sm:text-sm">Total Opportunities</span>
             </div>
-            <p className="mt-2 font-display text-3xl font-bold">{opportunities?.length ?? 0}</p>
+            <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">{opportunities?.length ?? 0}</p>
           </div>
           
           <div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Brain className="h-5 w-5" weight="duotone" />
-              <span className="text-sm">Analyzed</span>
+              <Brain className="h-4 w-4 sm:h-5 sm:w-5" weight="duotone" />
+              <span className="text-xs sm:text-sm">Analyzed</span>
             </div>
-            <p className="mt-2 font-display text-3xl font-bold">
+            <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">
               {opportunities?.filter(o => o.analysis).length ?? 0}
             </p>
           </div>
 
           <div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Buildings className="h-5 w-5" weight="duotone" />
-              <span className="text-sm">Active Deals</span>
+              <Buildings className="h-4 w-4 sm:h-5 sm:w-5" weight="duotone" />
+              <span className="text-xs sm:text-sm">Active Deals</span>
             </div>
-            <p className="mt-2 font-display text-3xl font-bold">
+            <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">
               {statusCounts['due-diligence'] + statusCounts.offer + statusCounts.negotiation}
             </p>
           </div>
 
           <div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Tag className="h-5 w-5" weight="duotone" />
-              <span className="text-sm">Watching</span>
+              <Tag className="h-4 w-4 sm:h-5 sm:w-5" weight="duotone" />
+              <span className="text-xs sm:text-sm">Watching</span>
             </div>
-            <p className="mt-2 font-display text-3xl font-bold">{statusCounts.watching}</p>
+            <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">{statusCounts.watching}</p>
           </div>
         </div>
       </Card>

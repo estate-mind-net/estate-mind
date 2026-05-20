@@ -40,7 +40,7 @@ function App() {
       {currentPage === 'pricing' && <PricingPage onNavigate={handleNavigate} />}
       
       {(currentPage === 'dashboard' || currentPage === 'opportunities') && currentPage === 'dashboard' && (
-        <div className="min-h-screen bg-background p-6 lg:p-8">
+        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <Dashboard onNavigate={handleNavigate} />
           </div>
@@ -48,7 +48,7 @@ function App() {
       )}
 
       {currentPage === 'opportunities' && (
-        <div className="min-h-screen bg-background p-6 lg:p-8">
+        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <OpportunityTracker 
               onNavigate={handleNavigate} 
@@ -59,13 +59,13 @@ function App() {
       )}
       
       {currentPage === 'analyzer' && (
-        <div className="min-h-screen bg-background p-6 lg:p-8">
+        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
           <DealAnalyzer onAnalyze={handleAnalyze} />
         </div>
       )}
       
       {currentPage === 'report' && (
-        <div className="min-h-screen bg-background p-6 lg:p-8">
+        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <InvestmentReport 
               analysis={currentAnalysis} 
@@ -76,7 +76,7 @@ function App() {
       )}
 
       {currentPage === 'analytics' && (
-        <div className="min-h-screen bg-background p-6 lg:p-8">
+        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
             <PortfolioAnalytics onBack={() => handleNavigate('dashboard')} />
           </div>
