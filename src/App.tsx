@@ -5,10 +5,11 @@ import { Dashboard } from '@/components/Dashboard'
 import { DealAnalyzer } from '@/components/DealAnalyzer'
 import { InvestmentReport } from '@/components/InvestmentReport'
 import { PricingPage } from '@/components/PricingPage'
+import { PortfolioAnalytics } from '@/components/PortfolioAnalytics'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import type { Property, InvestmentAnalysis } from '@/lib/types'
 
-type Page = 'landing' | 'dashboard' | 'analyzer' | 'report' | 'opportunities' | 'pricing'
+type Page = 'landing' | 'dashboard' | 'analyzer' | 'report' | 'opportunities' | 'pricing' | 'analytics'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('landing')
@@ -58,6 +59,14 @@ function App() {
               analysis={currentAnalysis} 
               onBack={() => handleNavigate('dashboard')} 
             />
+          </div>
+        </div>
+      )}
+
+      {currentPage === 'analytics' && (
+        <div className="min-h-screen bg-background p-6 lg:p-8">
+          <div className="mx-auto max-w-7xl">
+            <PortfolioAnalytics onBack={() => handleNavigate('dashboard')} />
           </div>
         </div>
       )}

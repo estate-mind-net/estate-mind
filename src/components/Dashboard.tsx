@@ -31,10 +31,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <h1 className="font-display text-4xl font-bold tracking-tight">Investment Dashboard</h1>
           <p className="mt-2 text-foreground/70">Track your real estate investment pipeline</p>
         </div>
-        <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90">
-          <Brain className="mr-2 h-5 w-5" />
-          Analyze Property
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => onNavigate('analytics')} variant="outline">
+            <ChartLine className="mr-2 h-5 w-5" />
+            Portfolio Analytics
+          </Button>
+          <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+            <Brain className="mr-2 h-5 w-5" />
+            Analyze Property
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">

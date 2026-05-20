@@ -61,7 +61,14 @@ This is a multi-featured investment intelligence platform with distinct sections
 - **Progression**: Pricing tiers display → Feature comparison → Tier selection → CTA to upgrade
 - **Success criteria**: Clear tier differentiation, value-focused messaging, premium positioning
 
-### 8. Navigation System
+### 8. Portfolio Analytics Dashboard
+- **Functionality**: Comprehensive portfolio performance analytics with interactive charts and metrics
+- **Purpose**: Provide investors with deep insights into portfolio performance, trends, and composition
+- **Trigger**: User clicks "Portfolio Analytics" button from dashboard
+- **Progression**: Analytics load → Time range selection → Tab navigation (Performance/Cash Flow/Composition/Yields) → Chart interaction → Metric exploration
+- **Success criteria**: Clear data visualization, Bloomberg Terminal aesthetic, actionable insights, interactive time range filtering, multiple chart types for comprehensive analysis
+
+### 9. Navigation System
 - **Functionality**: Global navigation between all platform sections
 - **Purpose**: Enable seamless movement throughout the application
 - **Trigger**: User clicks navigation elements
