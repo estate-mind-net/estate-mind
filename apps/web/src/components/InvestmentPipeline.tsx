@@ -7,16 +7,21 @@ import type { Opportunity, OpportunityStatus } from '@/lib/types'
 import { ScoreGauge } from './ScoreGauge'
 import { useKV } from '@github/spark/hooks'
 import { mockOpportunities } from '@/lib/mockData'
-import { STATUS_CONFIG } from '@/lib/constants'
 
 interface InvestmentPipelineProps {
   onBack: () => void
   onViewOpportunity: (opportunity: Opportunity) => void
 }
 
-const columns = (Object.entries(STATUS_CONFIG) as [OpportunityStatus, typeof STATUS_CONFIG[OpportunityStatus]][]).map(
-  ([id, config]) => ({ id, label: config.label, color: config.color })
-)
+const columns: { id: OpportunityStatus; label: string; color: string }[] = [
+  { id: 'new-opportunity', label: 'New Opportunity', color: 'oklch(0.75 0.15 195)' },
+  { id: 'initial-analysis', label: 'Initial Analysis', color: 'oklch(0.65 0.15 270)' },
+  { id: 'watching', label: 'Watching', color: 'oklch(0.75 0.15 75)' },
+  { id: 'due-diligence', label: 'Due Diligence', color: 'oklch(0.35 0.15 270)' },
+  { id: 'negotiation', label: 'Negotiation', color: 'oklch(0.75 0.15 195)' },
+  { id: 'acquired', label: 'Acquired', color: 'oklch(0.65 0.18 145)' },
+  { id: 'rejected', label: 'Rejected', color: 'oklch(0.60 0.22 25)' }
+]
 
 export function InvestmentPipeline({ onBack, onViewOpportunity }: InvestmentPipelineProps) {
   const [opportunities, setOpportunities] = useKV<Opportunity[]>('opportunities', mockOpportunities)

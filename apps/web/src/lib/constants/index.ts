@@ -1,5 +1,3 @@
-import type { OpportunityStatus } from '../types'
-
 export const APP_NAME = 'EstateMind'
 export const APP_TAGLINE = 'AI Investment Intelligence for Real Estate'
 
@@ -46,20 +44,6 @@ export const BADGE_VARIANTS = {
   'negotiation': 'default' as const,
   'acquired': 'default' as const,
   'rejected': 'destructive' as const
-}
-
-export const STATUS_CONFIG: Record<OpportunityStatus, {
-  label: string
-  variant: 'default' | 'secondary' | 'destructive' | 'outline'
-  color: string
-}> = {
-  'new-opportunity': { label: 'New Opportunity', variant: 'secondary', color: 'oklch(0.75 0.15 195)' },
-  'initial-analysis': { label: 'Initial Analysis', variant: 'outline', color: 'oklch(0.65 0.15 270)' },
-  'watching': { label: 'Watching', variant: 'outline', color: 'oklch(0.75 0.15 75)' },
-  'due-diligence': { label: 'Due Diligence', variant: 'default', color: 'oklch(0.35 0.15 270)' },
-  'negotiation': { label: 'Negotiation', variant: 'default', color: 'oklch(0.75 0.15 195)' },
-  'acquired': { label: 'Acquired', variant: 'default', color: 'oklch(0.65 0.18 145)' },
-  'rejected': { label: 'Rejected', variant: 'destructive', color: 'oklch(0.60 0.22 25)' },
 }
 
 export const TIME_RANGES = [

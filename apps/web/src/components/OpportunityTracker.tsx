@@ -29,7 +29,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScoreGauge } from './ScoreGauge'
 import { mockOpportunities } from '@/lib/mockData'
-import { STATUS_CONFIG } from '@/lib/constants'
 import type { Opportunity, OpportunityStatus } from '@/lib/types'
 import { toast } from 'sonner'
 
@@ -665,7 +664,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                 >
                   <div 
                     className="absolute left-0 top-0 h-full w-1 transition-all"
-                    style={{ backgroundColor: STATUS_CONFIG[opp.status].color }}
+                    style={{ backgroundColor: statusConfig[opp.status].color }}
                   />
                   
                   <div className="p-6 pl-8">
@@ -754,7 +753,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {Object.entries(STATUS_CONFIG).map(([status, config]) => (
+                              {Object.entries(statusConfig).map(([status, config]) => (
                                 <SelectItem key={status} value={status}>
                                   <div className="flex items-center gap-2">
                                     <div 

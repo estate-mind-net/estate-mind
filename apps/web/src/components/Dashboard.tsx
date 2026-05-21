@@ -6,10 +6,20 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { mockDashboardMetrics, mockOpportunities, mockAIInsights } from '@/lib/mockData'
-import { STATUS_CONFIG } from '@/lib/constants'
+import type { OpportunityStatus } from '@/lib/types'
 
 interface DashboardProps {
   onNavigate: (page: string, data?: unknown) => void
+}
+
+const statusConfig: Record<OpportunityStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  'new-opportunity': { label: 'New', variant: 'secondary' },
+  'initial-analysis': { label: 'Analyzing', variant: 'outline' },
+  'watching': { label: 'Watching', variant: 'outline' },
+  'due-diligence': { label: 'Due Diligence', variant: 'default' },
+  'negotiation': { label: 'Negotiation', variant: 'default' },
+  'acquired': { label: 'Acquired', variant: 'default' },
+  'rejected': { label: 'Rejected', variant: 'destructive' }
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
@@ -98,7 +108,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant={STATUS_CONFIG[opp.status].variant}>{STATUS_CONFIG[opp.status].label}</Badge>
+                    <Badge {...statusConfig[opp.status]}>{statusConfig[opp.status].label}</Badge>
                     {opp.tags.slice(0, 2).map((tag) => (
                       <Badge key={tag} variant="outline" className="text-xs">
                         {tag}
