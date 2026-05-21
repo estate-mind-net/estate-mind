@@ -51,7 +51,7 @@ export class OpportunitiesService {
         query = query.ilike('title', `%${filters.search}%`)
       }
 
-      query = query.order('createdAt', { ascending: false })
+      query = query.order('updated_at', { ascending: false })
 
       const { data, error } = await query
 
@@ -93,7 +93,7 @@ export class OpportunitiesService {
     }
   }
 
-  async create(opportunity: Omit<Opportunity, 'id' | 'createdAt' | 'updatedAt'>): Promise<Opportunity | null> {
+  async create(opportunity: Omit<Opportunity, 'id' | 'savedAt' | 'updatedAt'>): Promise<Opportunity | null> {
     const client = getSupabaseClient()
     
     if (!client) {
@@ -211,20 +211,20 @@ export class OpportunitiesService {
 
     if (filters?.minScore !== undefined) {
       opportunities = opportunities.filter(opp => 
-        opp.analysis && opp.analysis.investmentScore >= filters.minScore!
+        opp.analysis && opp.analysis.score.overall >= filters.minScore!
       )
     }
 
     if (filters?.maxScore !== undefined) {
       opportunities = opportunities.filter(opp => 
-        opp.analysis && opp.analysis.investmentScore <= filters.maxScore!
+        opp.analysis && opp.analysis.score.overall <= filters.maxScore!
       )
     }
 
     if (filters?.search) {
       const searchLower = filters.search.toLowerCase()
       opportunities = opportunities.filter(opp =>
-        opp.title.toLowerCase().includes(searchLower)
+        opp.property.title.toLowerCase().includes(searchLower)
       )
     }
 
@@ -235,13 +235,64 @@ export class OpportunitiesService {
     return mockOpportunities.find(opp => opp.id === id) || null
   }
 
-  private createMockOpportunity(opportunity: Omit<Opportunity, 'id' | 'createdAt' | 'updatedAt'>): Opportunity {
+  private createMockOpportunity(opportunity: Omit<Opportunity, 'id' | 'savedAt' | 'updatedAt'>): Opportunity {
     return {
       ...opportunity,
       id: `mock-${Date.now()}`,
-      createdAt: new Date().toISOString(),
+      savedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     } as Opportunity
+  }
+
+  async archive(ids: string[]): Promise<boolean> {
+    const client = getSupabaseClient()
+
+    if (!client) {
+      return true
+    }
+
+    try {
+      const { error } = await client
+        .from(this.tableName)
+        .update({ is_archived: true })
+        .in('id', ids)
+
+      if (error) {
+        console.error('Error archiving opportunities:', error)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Unexpected error archiving opportunities:', error)
+      return false
+    }
+  }
+
+  async getAllArchived(): Promise<Opportunity[]> {
+    const client = getSupabaseClient()
+
+    if (!client) {
+      return []
+    }
+
+    try {
+      const { data, error } = await client
+        .from(this.tableName)
+        .select('*')
+        .eq('is_archived', true)
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching archived opportunities:', error)
+        return []
+      }
+
+      return data as Opportunity[]
+    } catch (error) {
+      console.error('Unexpected error fetching archived opportunities:', error)
+      return []
+    }
   }
 
   private updateMockOpportunity(id: string, updates: OpportunityUpdate): Opportunity | null {

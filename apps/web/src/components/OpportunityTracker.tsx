@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useKV } from '@github/spark/hooks'
+import { useOpportunities } from '@/hooks/useOpportunities'
 import { 
   Funnel, 
   MagnifyingGlass, 
@@ -28,7 +28,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScoreGauge } from './ScoreGauge'
-import { mockOpportunities } from '@/lib/mockData'
 import type { Opportunity, OpportunityStatus } from '@/lib/types'
 import { toast } from 'sonner'
 
@@ -71,8 +70,7 @@ const allTags = [
 ]
 
 export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerProps) {
-  const [opportunities, setOpportunities] = useKV<Opportunity[]>('opportunities', mockOpportunities)
-  const [archivedOpportunities, setArchivedOpportunities] = useKV<Opportunity[]>('archived-opportunities', [])
+  const { opportunities, archivedOpportunities, updateStatus, bulkArchive, bulkAddTags, bulkDelete } = useOpportunities()
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('all')
   const [sortField, setSortField] = useState<SortField>('updatedAt')
@@ -189,13 +187,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   }, [opportunities])
 
   const handleStatusChange = (opportunityId: string, newStatus: OpportunityStatus) => {
-    setOpportunities(current => 
-      current?.map(o => 
-        o.id === opportunityId 
-          ? { ...o, status: newStatus, updatedAt: new Date().toISOString() }
-          : o
-      ) ?? []
-    )
+    updateStatus(opportunityId, newStatus)
     toast.success('Status updated successfully')
   }
 
@@ -253,16 +245,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   const handleBulkArchive = () => {
     if (selectedOpportunityIds.length === 0) return
 
-    const selected = opportunities?.filter(o => selectedOpportunityIds.includes(o.id)) ?? []
-    
-    setArchivedOpportunities(current => [
-      ...(current ?? []),
-      ...selected.map(o => ({ ...o, updatedAt: new Date().toISOString() }))
-    ])
-
-    setOpportunities(current =>
-      current?.filter(o => !selectedOpportunityIds.includes(o.id)) ?? []
-    )
+    bulkArchive(selectedOpportunityIds)
 
     toast.success(`Archived ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}`)
     setSelectedOpportunityIds([])
@@ -320,15 +303,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   const handleBulkAddTags = () => {
     if (selectedOpportunityIds.length === 0 || bulkTagsToAdd.length === 0) return
 
-    setOpportunities(current =>
-      current?.map(o => {
-        if (selectedOpportunityIds.includes(o.id)) {
-          const newTags = Array.from(new Set([...o.tags, ...bulkTagsToAdd]))
-          return { ...o, tags: newTags, updatedAt: new Date().toISOString() }
-        }
-        return o
-      }) ?? []
-    )
+    bulkAddTags(selectedOpportunityIds, bulkTagsToAdd)
 
     toast.success(`Added ${bulkTagsToAdd.length} ${bulkTagsToAdd.length === 1 ? 'tag' : 'tags'} to ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}`)
     setSelectedOpportunityIds([])
@@ -340,9 +315,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
     if (selectedOpportunityIds.length === 0) return
     if (!confirm(`Are you sure you want to permanently delete ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}?`)) return
 
-    setOpportunities(current =>
-      current?.filter(o => !selectedOpportunityIds.includes(o.id)) ?? []
-    )
+    bulkDelete(selectedOpportunityIds)
 
     toast.success(`Deleted ${selectedOpportunityIds.length} ${selectedOpportunityIds.length === 1 ? 'opportunity' : 'opportunities'}`)
     setSelectedOpportunityIds([])

@@ -5,8 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, DotsSixVertical, Eye, MapPin } from '@phosphor-icons/react'
 import type { Opportunity, OpportunityStatus } from '@/lib/types'
 import { ScoreGauge } from './ScoreGauge'
-import { useKV } from '@github/spark/hooks'
-import { mockOpportunities } from '@/lib/mockData'
+import { useOpportunities } from '@/hooks/useOpportunities'
 
 interface InvestmentPipelineProps {
   onBack: () => void
@@ -24,7 +23,7 @@ const columns: { id: OpportunityStatus; label: string; color: string }[] = [
 ]
 
 export function InvestmentPipeline({ onBack, onViewOpportunity }: InvestmentPipelineProps) {
-  const [opportunities, setOpportunities] = useKV<Opportunity[]>('opportunities', mockOpportunities)
+  const { opportunities, updateStatus } = useOpportunities()
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
 
   const handleDragStart = (e: React.DragEvent, oppId: string) => {
@@ -41,13 +40,7 @@ export function InvestmentPipeline({ onBack, onViewOpportunity }: InvestmentPipe
     e.preventDefault()
     if (!draggedItem) return
 
-    setOpportunities((current) => 
-      (current || []).map((opp) =>
-        opp.id === draggedItem
-          ? { ...opp, status: newStatus, updatedAt: new Date().toISOString() }
-          : opp
-      )
-    )
+    updateStatus(draggedItem, newStatus)
     setDraggedItem(null)
   }
 

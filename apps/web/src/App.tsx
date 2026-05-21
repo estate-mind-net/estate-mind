@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Toaster } from '@/components/ui/sonner'
+import { OpportunitiesProvider } from '@/hooks/useOpportunities'
 import { LandingPage } from '@/components/LandingPage'
 import { Dashboard } from '@/components/Dashboard'
 import { DealAnalyzer } from '@/components/DealAnalyzer'
@@ -43,8 +44,9 @@ function App() {
   }
 
   return (
-    <>
-      {currentPage === 'landing' && <LandingPage onNavigate={handleNavigate} />}
+    <OpportunitiesProvider>
+      <>
+        {currentPage === 'landing' && <LandingPage onNavigate={handleNavigate} />}
       
       {currentPage === 'pricing' && <PricingPage onNavigate={handleNavigate} />}
       
@@ -104,7 +106,8 @@ function App() {
       )}
 
       <Toaster />
-    </>
+      </>
+    </OpportunitiesProvider>
   )
 }
 
