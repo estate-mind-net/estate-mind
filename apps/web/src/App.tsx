@@ -8,6 +8,7 @@ import { PricingPage } from '@/components/PricingPage'
 import { PortfolioAnalytics } from '@/components/PortfolioAnalytics'
 import { OpportunityTracker } from '@/components/OpportunityTracker'
 import { InvestmentPipeline } from '@/components/InvestmentPipeline'
+import { PageLayout } from '@/components/PageLayout'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import type { Property, InvestmentAnalysis, Opportunity } from '@/lib/types'
 
@@ -49,58 +50,48 @@ function App() {
       {currentPage === 'pricing' && <PricingPage onNavigate={handleNavigate} />}
       
       {currentPage === 'dashboard' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <Dashboard onNavigate={handleNavigate} />
-          </div>
-        </div>
+        <PageLayout>
+          <Dashboard onNavigate={handleNavigate} />
+        </PageLayout>
       )}
 
       {currentPage === 'pipeline' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <InvestmentPipeline 
-              onBack={() => handleNavigate('dashboard')}
-              onViewOpportunity={handleViewOpportunity}
-            />
-          </div>
-        </div>
+        <PageLayout>
+          <InvestmentPipeline 
+            onBack={() => handleNavigate('dashboard')}
+            onViewOpportunity={handleViewOpportunity}
+          />
+        </PageLayout>
       )}
 
       {currentPage === 'opportunities' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <OpportunityTracker 
-              onNavigate={handleNavigate} 
-              onBack={() => handleNavigate('dashboard')}
-            />
-          </div>
-        </div>
+        <PageLayout>
+          <OpportunityTracker 
+            onNavigate={handleNavigate} 
+            onBack={() => handleNavigate('dashboard')}
+          />
+        </PageLayout>
       )}
       
       {currentPage === 'analyzer' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
+        <PageLayout fullWidth>
           <DealAnalyzer onAnalyze={handleAnalyze} />
-        </div>
+        </PageLayout>
       )}
       
       {currentPage === 'report' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <InvestmentReport 
-              analysis={currentAnalysis} 
-              onBack={() => handleNavigate('dashboard')} 
-            />
-          </div>
-        </div>
+        <PageLayout>
+          <InvestmentReport 
+            analysis={currentAnalysis} 
+            onBack={() => handleNavigate('dashboard')} 
+          />
+        </PageLayout>
       )}
 
       {currentPage === 'analytics' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <PortfolioAnalytics onBack={() => handleNavigate('dashboard')} />
-          </div>
-        </div>
+        <PageLayout>
+          <PortfolioAnalytics onBack={() => handleNavigate('dashboard')} />
+        </PageLayout>
       )}
 
       <Toaster />
