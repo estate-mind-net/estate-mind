@@ -46,19 +46,17 @@ export function OpportunitiesProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const bulkArchive = useCallback((ids: string[]) => {
-    setOpportunities((current) => {
-      const selected = (current ?? []).filter((o) => ids.includes(o.id))
-      setArchivedOpportunities((archived) => [
-        ...(archived ?? []),
-        ...selected.map((o) => ({ ...o, updatedAt: new Date().toISOString() })),
-      ])
-      return (current ?? []).filter((o) => !ids.includes(o.id))
-    })
+    const selected = (opportunities ?? []).filter((o) => ids.includes(o.id))
+    setArchivedOpportunities((archived) => [
+      ...(archived ?? []),
+      ...selected.map((o) => ({ ...o, updatedAt: new Date().toISOString() })),
+    ])
+    setOpportunities((current) => (current ?? []).filter((o) => !ids.includes(o.id)))
     // Async persist — best-effort
     opportunitiesService.archive(ids).catch((err) =>
       console.error('Failed to persist archive:', err)
     )
-  }, [])
+  }, [opportunities])
 
   const bulkAddTags = useCallback((ids: string[], tags: string[]) => {
     setOpportunities((current) =>
