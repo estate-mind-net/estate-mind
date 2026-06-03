@@ -9,12 +9,50 @@ import { Card } from '@/components/ui/card'
 import type { Property, PropertyType, PropertyCondition } from '@/lib/types'
 
 interface DealAnalyzerProps {
-  onAnalyze: (property: Property) => void
+  onAnalyze: (property: Property) => void | Promise<void>
+}
+
+type DealAnalyzerFormData = {
+  title: string
+  country: string
+  city: string
+  district: string
+  propertyType: PropertyType
+  askingPrice: string
+  currency: string
+  sizeSqm: string
+  bedrooms: string
+  condition: PropertyCondition
+  listingUrl: string
+  description: string
+  expectedRent: string
+  airbnbAssumptions: string
+  renovationNotes: string
+  legalNotes: string
+}
+
+const DEMO_FORM_DATA: DealAnalyzerFormData = {
+  title: '2-bedroom apartment near city center',
+  country: 'Serbia',
+  city: 'Novi Sad',
+  district: 'Grbavica',
+  propertyType: 'apartment',
+  askingPrice: '145000',
+  currency: 'EUR',
+  sizeSqm: '62',
+  bedrooms: '2',
+  condition: 'good',
+  listingUrl: '',
+  description: 'A 2-bedroom apartment in Grbavica, Novi Sad, close to the city center, university area, public transport, cafes, and daily amenities. Suitable for long-term rental. Light renovation may improve rentability and resale appeal.',
+  expectedRent: '750',
+  airbnbAssumptions: 'Potential short-term rental demand from business travelers, university visitors, and weekend tourists, but no verified occupancy or ADR data provided.',
+  renovationNotes: 'Light renovation may include painting, bathroom refresh, basic furniture upgrade, and lighting improvement. No contractor quote provided.',
+  legalNotes: 'No ownership documents, cadastral extract, debt confirmation, legalization status, or lawyer review provided yet.',
 }
 
 export function DealAnalyzer({ onAnalyze }: DealAnalyzerProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<DealAnalyzerFormData>({
     title: '',
     country: '',
     city: '',
@@ -32,6 +70,10 @@ export function DealAnalyzer({ onAnalyze }: DealAnalyzerProps) {
     renovationNotes: '',
     legalNotes: ''
   })
+
+  const handlePrefillDemoData = () => {
+    setFormData(DEMO_FORM_DATA)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,10 +100,11 @@ export function DealAnalyzer({ onAnalyze }: DealAnalyzerProps) {
       createdAt: new Date().toISOString()
     }
 
-    setTimeout(() => {
+    try {
+      await onAnalyze(property)
+    } finally {
       setIsAnalyzing(false)
-      onAnalyze(property)
-    }, 2000)
+    }
   }
 
   return (
@@ -297,6 +340,15 @@ export function DealAnalyzer({ onAnalyze }: DealAnalyzerProps) {
           </div>
 
           <div className="flex items-center gap-4 pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              disabled={isAnalyzing}
+              onClick={handlePrefillDemoData}
+            >
+              Prefill Demo Data
+            </Button>
             <Button
               type="submit"
               size="lg"

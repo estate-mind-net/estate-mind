@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { ScoreGauge } from './ScoreGauge'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +17,24 @@ interface InvestmentReportProps {
 export function InvestmentReport({ analysis, onBack }: InvestmentReportProps) {
   const report = analysis || mockAnalyses[0]
   const { property, score, recommendation, executiveSummary, rentalYieldEstimate, airbnbPotential, renovationROI, appreciationPotential, risks, opportunities, assumptions, missingData } = report
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return
+    }
+
+    console.debug('[deal-analysis-ui] final report score fields', {
+      usingProvidedAnalysis: Boolean(analysis),
+      usingMockFallback: !analysis,
+      score,
+      overallScore: (report as InvestmentAnalysis & Record<string, unknown>).overallScore,
+      investmentScore: (report as InvestmentAnalysis & Record<string, unknown>).investmentScore,
+      metrics: (report as InvestmentAnalysis & Record<string, unknown>).metrics,
+      confidence: (report as InvestmentAnalysis & Record<string, unknown>).confidence,
+      confidenceLevel: (report as InvestmentAnalysis & Record<string, unknown>).confidenceLevel,
+      renderedOverallScore: score?.overall,
+    })
+  }, [analysis, report, score])
 
   const recommendationConfig = {
     buy: { label: 'Strong Buy', color: 'text-success', bgColor: 'bg-success/10', borderColor: 'border-success' },
