@@ -10,6 +10,7 @@ import { OpportunityTracker } from '@/components/OpportunityTracker'
 import { InvestmentPipeline } from '@/components/InvestmentPipeline'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
+import { persistDealAnalyzerResult } from '@/services/supabase/dealPersistence.service'
 import type { Property, InvestmentAnalysis, Opportunity } from '@/lib/types'
 
 type Page = 'landing' | 'dashboard' | 'analyzer' | 'report' | 'opportunities' | 'pricing' | 'analytics' | 'pipeline'
@@ -30,12 +31,21 @@ function App() {
 
   const handleAnalyze = async (property: Property) => {
     let analysis: InvestmentAnalysis
+    let aiSucceeded = false
 
     try {
       analysis = await generateDealAnalysis(property)
+      aiSucceeded = true
     } catch (error) {
       console.warn('Falling back to mock analysis:', error instanceof Error ? error.message : 'Unknown error')
       analysis = generateMockAnalysis(property)
+    }
+
+    if (aiSucceeded) {
+      const persistence = await persistDealAnalyzerResult(property, analysis)
+      if (!persistence.persisted) {
+        console.warn('Deal persistence skipped:', persistence.reason ?? 'Unknown reason')
+      }
     }
 
     setCurrentAnalysis(analysis)
