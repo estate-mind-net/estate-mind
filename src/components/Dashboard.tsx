@@ -38,6 +38,10 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <Kanban className="mr-2 h-5 w-5" />
             Pipeline
           </Button>
+          <Button onClick={() => onNavigate('opportunities')} variant="outline" className="w-full sm:w-auto">
+            <Buildings className="mr-2 h-5 w-5" />
+            My Opportunities
+          </Button>
           <Button onClick={() => onNavigate('analytics')} variant="outline" className="w-full sm:w-auto">
             <ChartLine className="mr-2 h-5 w-5" />
             Analytics
@@ -81,7 +85,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <div className="mb-4 sm:mb-6 flex items-center justify-between">
             <h2 className="font-display text-xl sm:text-2xl font-bold">Recent Opportunities</h2>
             <Button variant="outline" size="sm" onClick={() => onNavigate('opportunities')}>
-              View All
+              My Opportunities
             </Button>
           </div>
 

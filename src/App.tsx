@@ -6,7 +6,7 @@ import { DealAnalyzer } from '@/components/DealAnalyzer'
 import { InvestmentReport } from '@/components/InvestmentReport'
 import { PricingPage } from '@/components/PricingPage'
 import { PortfolioAnalytics } from '@/components/PortfolioAnalytics'
-import { OpportunityTracker } from '@/components/OpportunityTracker'
+import { MyOpportunities } from '@/components/MyOpportunities'
 import { InvestmentPipeline } from '@/components/InvestmentPipeline'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
@@ -89,10 +89,7 @@ function App() {
       {currentPage === 'opportunities' && (
         <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-7xl">
-            <OpportunityTracker 
-              onNavigate={handleNavigate} 
-              onBack={() => handleNavigate('dashboard')}
-            />
+            <MyOpportunities onNavigate={handleNavigate} onBack={() => handleNavigate('dashboard')} />
           </div>
         </div>
       )}
