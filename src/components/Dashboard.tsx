@@ -1,12 +1,14 @@
-import { Brain, TrendUp, ChartLine, Target, Buildings, Wallet, Kanban } from '@phosphor-icons/react'
+import { useEffect, useMemo, useState } from 'react'
+import { Brain, TrendUp, Target, Buildings, Wallet } from '@phosphor-icons/react'
 import { MetricCard } from './MetricCard'
 import { ScoreGauge } from './ScoreGauge'
 import { AIInsightCard } from './AIInsightCard'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { mockDashboardMetrics, mockOpportunities, mockAIInsights } from '@/lib/mockData'
-import type { OpportunityStatus } from '@/lib/types'
+import { opportunityWorkspaceService, type OpportunityWorkspaceItem } from '@/services/supabase/opportunityWorkspace.service'
+import { useAuth } from '@/hooks/useAuth'
+import type { AIInsight, DashboardMetrics, OpportunityStatus } from '@/lib/types'
 
 interface DashboardProps {
   onNavigate: (page: string, data?: unknown) => void
@@ -23,8 +25,90 @@ const statusConfig: Record<OpportunityStatus, { label: string; variant: 'default
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const metrics = mockDashboardMetrics
-  const insights = mockAIInsights.slice(0, 3)
+  const { organization } = useAuth()
+  const [opportunities, setOpportunities] = useState<OpportunityWorkspaceItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      setIsLoading(true)
+
+      try {
+        const result = await opportunityWorkspaceService.getMyOpportunities({
+          organizationId: organization?.id,
+        })
+
+        setOpportunities(result.items)
+      } catch (error) {
+        console.error('Failed to load dashboard opportunities', error)
+        setOpportunities([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    void loadDashboardData()
+  }, [organization?.id])
+
+  const metrics = useMemo<DashboardMetrics>(() => {
+    if (opportunities.length === 0) {
+      return {
+        totalOpportunities: 0,
+        averageScore: 0,
+        bestYield: 0,
+        portfolioValue: 0,
+        activeDeals: 0,
+        analyzedThisMonth: 0,
+      }
+    }
+
+    const scored = opportunities.filter((item) => item.analysis)
+    const averageScore = scored.length > 0
+      ? Math.round(scored.reduce((sum, item) => sum + (item.analysis?.score.overall ?? 0), 0) / scored.length)
+      : 0
+
+    const bestYield = scored.length > 0
+      ? Math.max(...scored.map((item) => item.analysis?.rentalYieldEstimate.percentage ?? 0))
+      : 0
+
+    const portfolioValue = opportunities.reduce((sum, item) => sum + item.askingPrice, 0)
+    const activeDeals = opportunities.filter((item) => ['due-diligence', 'negotiation', 'watching'].includes(item.stage)).length
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
+    const analyzedThisMonth = scored.filter((item) => {
+      const analyzedAt = item.analysis?.analyzedAt
+      return analyzedAt ? new Date(analyzedAt).getTime() >= thirtyDaysAgo : false
+    }).length
+
+    return {
+      totalOpportunities: opportunities.length,
+      averageScore,
+      bestYield: Number(bestYield.toFixed(1)),
+      portfolioValue,
+      activeDeals,
+      analyzedThisMonth,
+    }
+  }, [opportunities])
+
+  const insights = useMemo<AIInsight[]>(() => {
+    return opportunities
+      .filter((item) => item.analysis)
+      .slice(0, 3)
+      .map((item) => ({
+        id: `insight-${item.id}`,
+        type: 'opportunity',
+        priority: (item.analysis?.recommendation === 'buy' ? 'high' : 'medium') as 'high' | 'medium' | 'low',
+        title: `${item.title} recommendation: ${(item.analysis?.recommendation ?? 'watch').toUpperCase()}`,
+        description: item.analysis?.executiveSummary ?? 'AI analysis is available for this opportunity.',
+        propertyId: item.propertyId,
+        actionable: Boolean(item.analysis),
+        createdAt: item.updatedAt,
+      }))
+  }, [opportunities])
+
+  const recentOpportunities = useMemo(
+    () => [...opportunities].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 4),
+    [opportunities],
+  )
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -33,20 +117,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Investment Dashboard</h1>
           <p className="mt-2 text-sm sm:text-base text-foreground/70">AI-powered investment intelligence</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          <Button onClick={() => onNavigate('pipeline')} variant="outline" className="w-full sm:w-auto">
-            <Kanban className="mr-2 h-5 w-5" />
-            Pipeline
-          </Button>
-          <Button onClick={() => onNavigate('opportunities')} variant="outline" className="w-full sm:w-auto">
-            <Buildings className="mr-2 h-5 w-5" />
-            My Opportunities
-          </Button>
-          <Button onClick={() => onNavigate('analytics')} variant="outline" className="w-full sm:w-auto">
-            <ChartLine className="mr-2 h-5 w-5" />
-            Analytics
-          </Button>
-          <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
+        <div className="flex items-stretch sm:items-center">
+          <Button onClick={() => onNavigate('new-opportunity')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
             <Brain className="mr-2 h-5 w-5" />
             Analyze Property
           </Button>
@@ -58,7 +130,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           title="Total Opportunities"
           value={metrics.totalOpportunities}
           icon={<Buildings className="h-5 w-5 sm:h-6 sm:w-6" weight="duotone" />}
-          trend={{ value: 12, isPositive: true }}
         />
         <MetricCard
           title="Average Score"
@@ -71,7 +142,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           value={`${metrics.bestYield}%`}
           subtitle="Annual"
           icon={<TrendUp className="h-5 w-5 sm:h-6 sm:w-6" weight="duotone" />}
-          trend={{ value: 0.8, isPositive: true }}
         />
         <MetricCard
           title="Portfolio Value"
@@ -82,18 +152,25 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2 p-4 sm:p-6">
-          <div className="mb-4 sm:mb-6 flex items-center justify-between">
+          <div className="mb-4 sm:mb-6 flex items-center">
             <h2 className="font-display text-xl sm:text-2xl font-bold">Recent Opportunities</h2>
-            <Button variant="outline" size="sm" onClick={() => onNavigate('opportunities')}>
-              My Opportunities
-            </Button>
           </div>
 
           <div className="space-y-3 sm:space-y-4">
-            {mockOpportunities.map((opp) => (
+            {recentOpportunities.length === 0 && !isLoading ? (
+              <Card className="border-dashed p-6 text-center text-muted-foreground">
+                Analyze your first property opportunity
+              </Card>
+            ) : null}
+
+            {recentOpportunities.map((opp) => (
               <div
                 key={opp.id}
-                onClick={() => onNavigate('report', opp.analysis)}
+                onClick={() => {
+                  if (opp.analysis) {
+                    onNavigate('report', opp.analysis)
+                  }
+                }}
                 className="flex cursor-pointer items-start gap-3 sm:gap-4 rounded-lg border border-border bg-card/50 p-3 sm:p-4 transition-all hover:border-accent/50 hover:bg-card"
               >
                 <div className="flex-1 min-w-0">
@@ -112,22 +189,22 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge {...statusConfig[opp.status]}>{statusConfig[opp.status].label}</Badge>
-                    {opp.tags.slice(0, 2).map((tag) => (
+                    <Badge {...statusConfig[opp.stage]}>{statusConfig[opp.stage].label}</Badge>
+                    {((opp.analysis?.opportunities ?? []).slice(0, 2)).map((tag) => (
                       <Badge key={tag} variant="outline" className="text-xs">
                         {tag}
                       </Badge>
                     ))}
-                    {opp.tags.length > 2 && (
+                    {(opp.analysis?.opportunities?.length ?? 0) > 2 && (
                       <Badge variant="outline" className="text-xs">
-                        +{opp.tags.length - 2}
+                        +{(opp.analysis?.opportunities?.length ?? 0) - 2}
                       </Badge>
                     )}
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
                     <span className="font-semibold whitespace-nowrap">
-                      {opp.property.currency} {opp.property.askingPrice.toLocaleString()}
+                      {opp.currency} {opp.askingPrice.toLocaleString()}
                     </span>
                     <span className="text-muted-foreground hidden sm:inline">•</span>
                     <span className="text-muted-foreground whitespace-nowrap">{opp.property.sizeSqm}m²</span>
@@ -161,7 +238,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   insight={insight}
                   onClick={() => {
                     if (insight.propertyId) {
-                      const opp = mockOpportunities.find(o => o.property.id === insight.propertyId)
+                      const opp = opportunities.find(o => o.propertyId === insight.propertyId)
                       if (opp?.analysis) {
                         onNavigate('report', opp.analysis)
                       }
@@ -169,6 +246,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   }}
                 />
               ))}
+              {insights.length === 0 && !isLoading ? (
+                <p className="text-sm text-muted-foreground">AI insights will appear after your first analyzed opportunity.</p>
+              ) : null}
             </div>
           </Card>
 
@@ -177,15 +257,15 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs sm:text-sm text-muted-foreground">Due Diligence</span>
-                <span className="font-semibold">1</span>
+                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'due-diligence').length}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs sm:text-sm text-muted-foreground">Offer Stage</span>
-                <span className="font-semibold">1</span>
+                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'negotiation').length}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs sm:text-sm text-muted-foreground">Watching</span>
-                <span className="font-semibold">1</span>
+                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'watching').length}</span>
               </div>
             </div>
           </Card>

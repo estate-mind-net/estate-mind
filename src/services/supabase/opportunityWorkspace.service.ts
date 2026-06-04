@@ -1,5 +1,4 @@
 import type { InvestmentAnalysis, Opportunity, Property } from '@/lib/types'
-import { mockOpportunities } from '@/lib/mockData'
 import { getSupabaseClient } from './client'
 
 type PropertyRow = {
@@ -67,6 +66,78 @@ export interface OpportunityWorkspaceLoadResult {
   source: 'supabase' | 'mock'
 }
 
+interface OpportunityWorkspaceQueryOptions {
+  organizationId?: string | null
+  allowMockFallback?: boolean
+}
+
+export interface CreateOpportunityInput {
+  title: string
+  country: string
+  city: string
+  district: string
+  propertyType: Property['propertyType']
+  askingPrice: number
+  currency: string
+  sizeSqm: number
+  bedrooms: number
+  condition: Property['condition']
+  listingUrl: string
+  description: string
+}
+
+type PropertyInsertRow = {
+  organization_id: string
+  title: string
+  city: string
+  country: string
+  address: string
+  property_type: string
+  asking_price: number
+  currency: string
+  area_sqm: number
+  bedrooms: number
+  condition: string
+  description: string
+  listing_url: string
+}
+
+type OpportunityInsertRow = {
+  organization_id: string
+  property_id: string
+  title: string
+  stage: Opportunity['status']
+  priority: string
+  notes: string
+}
+
+export interface CreateOpportunityResult {
+  opportunityId: string
+}
+
+const isCreatedByIssue = (message: string) => {
+  const lower = message.toLowerCase()
+  return lower.includes('created_by')
+}
+
+const isListingUrlIssue = (message: string) => {
+  const lower = message.toLowerCase()
+  return lower.includes('listing_url')
+}
+
+const isColumnIssue = (message: string) => {
+  const lower = message.toLowerCase()
+  return lower.includes('column') && lower.includes('does not exist')
+}
+
+const shouldRetryWithoutCreatedBy = (message: string) => {
+  return isCreatedByIssue(message) && (isColumnIssue(message) || message.toLowerCase().includes('foreign key'))
+}
+
+const shouldRetryWithoutListingUrl = (message: string) => {
+  return isListingUrlIssue(message) && isColumnIssue(message)
+}
+
 const stageFallback: Opportunity['status'] = 'initial-analysis'
 
 const parseAnalysisSnapshot = (content: string | null): InvestmentAnalysis | null => {
@@ -109,8 +180,7 @@ const mapRowsToItem = (
 ): OpportunityWorkspaceItem => {
   const mappedProperty = mapPropertyRow(property)
   const parsedAnalysis = parseAnalysisSnapshot(note?.content ?? null)
-  const mockAnalysis = mockOpportunities.find((mock) => mock.property.id === mappedProperty.id)?.analysis ?? null
-  const analysis = parsedAnalysis ?? mockAnalysis
+  const analysis = parsedAnalysis
 
   return {
     id: opportunity.id,
@@ -134,51 +204,182 @@ const mapRowsToItem = (
           createdAt: note.created_at ?? opportunity.updated_at ?? opportunity.created_at ?? mappedProperty.createdAt,
           parsedAnalysis,
         }
-      : analysis
-        ? {
-            id: `mock-analysis-${opportunity.id}`,
-            content: JSON.stringify(analysis, null, 2),
-            createdAt: analysis.analyzedAt,
-            parsedAnalysis: analysis,
-          }
-        : null,
+      : null,
   }
 }
 
-const getMockWorkspaceItems = (): OpportunityWorkspaceItem[] =>
-  mockOpportunities.map((opportunity) => ({
-    id: opportunity.id,
-    propertyId: opportunity.property.id,
-    title: opportunity.property.title,
-    city: opportunity.property.city,
-    country: opportunity.property.country,
-    askingPrice: opportunity.property.askingPrice,
-    currency: opportunity.property.currency,
-    expectedMonthlyRent: opportunity.analysis?.rentalYieldEstimate.monthly ?? opportunity.property.expectedRent ?? null,
-    stage: opportunity.status,
-    priority: opportunity.status === 'due-diligence' || opportunity.status === 'negotiation' ? 'high' : 'medium',
-    createdAt: opportunity.savedAt,
-    updatedAt: opportunity.updatedAt,
-    property: opportunity.property,
-    analysis: opportunity.analysis ?? null,
-    latestNote: opportunity.analysis
-      ? {
-          id: `mock-analysis-${opportunity.id}`,
-          content: JSON.stringify(opportunity.analysis, null, 2),
-          createdAt: opportunity.analysis.analyzedAt,
-          parsedAnalysis: opportunity.analysis,
-        }
-      : null,
-  }))
-
 export class OpportunityWorkspaceService {
-  async getMyOpportunities(): Promise<OpportunityWorkspaceLoadResult> {
+  private async insertProperty(
+    organizationId: string,
+    createdBy: string | null,
+    input: CreateOpportunityInput,
+  ): Promise<string> {
     const client = getSupabaseClient()
+    if (!client) {
+      throw new Error('Supabase is unavailable.')
+    }
+
+    const basePayload: PropertyInsertRow = {
+      organization_id: organizationId,
+      title: input.title,
+      city: input.city,
+      country: input.country,
+      address: input.district,
+      property_type: input.propertyType,
+      asking_price: input.askingPrice,
+      currency: input.currency,
+      area_sqm: input.sizeSqm,
+      bedrooms: input.bedrooms,
+      condition: input.condition,
+      description: input.description,
+      listing_url: input.listingUrl,
+    }
+
+    const buildPayload = (includeCreatedBy: boolean, includeListingUrl: boolean) => {
+      const payload = {
+        ...basePayload,
+      } as Record<string, unknown>
+
+      if (!includeListingUrl) {
+        delete payload.listing_url
+      }
+
+      if (includeCreatedBy && createdBy) {
+        payload.created_by = createdBy
+      }
+
+      return payload
+    }
+
+    let includeCreatedBy = Boolean(createdBy)
+    let includeListingUrl = true
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { data, error } = await client
+        .from('properties')
+        .insert([buildPayload(includeCreatedBy, includeListingUrl)])
+        .select('id')
+        .single()
+
+      if (!error && data) {
+        return (data as { id: string }).id
+      }
+
+      const message = error?.message ?? error?.details ?? 'Failed to create property row.'
+
+      if (includeCreatedBy && shouldRetryWithoutCreatedBy(message)) {
+        includeCreatedBy = false
+        continue
+      }
+
+      if (includeListingUrl && shouldRetryWithoutListingUrl(message)) {
+        includeListingUrl = false
+        continue
+      }
+
+      throw new Error(message)
+    }
+
+    throw new Error('Failed to create property row.')
+  }
+
+  private async insertOpportunity(
+    organizationId: string,
+    createdBy: string | null,
+    propertyId: string,
+    input: CreateOpportunityInput,
+  ): Promise<string> {
+    const client = getSupabaseClient()
+    if (!client) {
+      throw new Error('Supabase is unavailable.')
+    }
+
+    const basePayload: OpportunityInsertRow = {
+      organization_id: organizationId,
+      property_id: propertyId,
+      title: input.title,
+      stage: 'new-opportunity',
+      priority: 'medium',
+      notes: input.listingUrl ? `Listing URL: ${input.listingUrl}` : '',
+    }
+
+    const withCreatedBy = createdBy
+      ? ({ ...basePayload, created_by: createdBy } as Record<string, unknown>)
+      : (basePayload as Record<string, unknown>)
+
+    const tryInsert = async (payload: Record<string, unknown>) => {
+      return client
+        .from('opportunities')
+        .insert([payload])
+        .select('id')
+        .single()
+    }
+
+    const firstAttempt = await tryInsert(withCreatedBy)
+    if (!firstAttempt.error && firstAttempt.data) {
+      return (firstAttempt.data as { id: string }).id
+    }
+
+    const firstMessage = firstAttempt.error?.message ?? firstAttempt.error?.details ?? 'Failed to create opportunity row.'
+    if (createdBy && shouldRetryWithoutCreatedBy(firstMessage)) {
+      const secondAttempt = await tryInsert(basePayload as Record<string, unknown>)
+      if (!secondAttempt.error && secondAttempt.data) {
+        return (secondAttempt.data as { id: string }).id
+      }
+
+      throw new Error(secondAttempt.error?.message ?? secondAttempt.error?.details ?? 'Failed to create opportunity row.')
+    }
+
+    throw new Error(firstMessage)
+  }
+
+  async createOpportunity(
+    input: CreateOpportunityInput,
+    context: {
+      organizationId: string
+      userId: string
+      profileId?: string | null
+    },
+  ): Promise<CreateOpportunityResult> {
+    const client = getSupabaseClient()
+    if (!client) {
+      throw new Error('Supabase is unavailable. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.')
+    }
+
+    const createdBy = context.userId || context.profileId || null
+    const propertyId = await this.insertProperty(context.organizationId, createdBy, input)
+
+    try {
+      const opportunityId = await this.insertOpportunity(context.organizationId, createdBy, propertyId, input)
+      return { opportunityId }
+    } catch (error) {
+      await client.from('properties').delete().eq('id', propertyId)
+      throw error
+    }
+  }
+
+  async getMyOpportunities(options?: OpportunityWorkspaceQueryOptions): Promise<OpportunityWorkspaceLoadResult> {
+    const client = getSupabaseClient()
+    const organizationId = options?.organizationId
 
     if (!client) {
+      if (!options?.allowMockFallback) {
+        return {
+          items: [],
+          source: 'supabase',
+        }
+      }
+
       return {
-        items: getMockWorkspaceItems(),
+        items: [],
         source: 'mock',
+      }
+    }
+
+    if (!organizationId) {
+      return {
+        items: [],
+        source: 'supabase',
       }
     }
 
@@ -186,13 +387,16 @@ export class OpportunityWorkspaceService {
       client
         .from('opportunities')
         .select('id,property_id,title,stage,priority,expected_monthly_rent,created_at,updated_at')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
       client
         .from('properties')
-        .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at'),
+        .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at')
+        .eq('organization_id', organizationId),
       client
         .from('notes')
         .select('id,opportunity_id,content,created_at')
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
     ])
 

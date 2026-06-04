@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScoreGauge } from './ScoreGauge'
 import { opportunityWorkspaceService, type OpportunityWorkspaceItem } from '@/services/supabase/opportunityWorkspace.service'
+import { useAuth } from '@/hooks/useAuth'
 import type { InvestmentAnalysis } from '@/lib/types'
 
 interface MyOpportunitiesProps {
@@ -78,14 +79,14 @@ function EmptyState({ onNavigate }: { onNavigate: (page: string) => void }) {
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/15 text-accent">
         <Buildings className="h-7 w-7" weight="duotone" />
       </div>
-      <h2 className="mt-5 font-display text-2xl font-bold">No opportunities yet</h2>
+      <h2 className="mt-5 font-display text-2xl font-bold">Analyze your first property opportunity</h2>
       <p className="mx-auto mt-3 max-w-2xl text-sm sm:text-base text-muted-foreground">
         Save an analyzed property to Supabase and it will appear here as a tracked investor opportunity with property facts, workflow data, and the latest AI snapshot.
       </p>
       <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-        <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+        <Button onClick={() => onNavigate('new-opportunity')} className="bg-accent text-accent-foreground hover:bg-accent/90">
           <Plus className="mr-2 h-4 w-4" />
-          Analyze Property
+          Create Opportunity
         </Button>
         <Button variant="outline" onClick={() => onNavigate('dashboard')}>
           Back to Dashboard
@@ -298,6 +299,7 @@ function OpportunityDetail({
 }
 
 export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
+  const { organization } = useAuth()
   const [items, setItems] = useState<OpportunityWorkspaceItem[] | null>(null)
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -309,7 +311,9 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
     setError(null)
 
     try {
-      const result = await opportunityWorkspaceService.getMyOpportunities()
+      const result = await opportunityWorkspaceService.getMyOpportunities({
+        organizationId: organization?.id,
+      })
       setItems(result.items)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load opportunities')
@@ -321,7 +325,7 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
 
   useEffect(() => {
     void loadItems()
-  }, [])
+  }, [organization?.id])
 
   const selectedOpportunity = useMemo(
     () => items?.find((item) => item.id === selectedOpportunityId) ?? null,
@@ -383,7 +387,7 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Dashboard
           </Button>
-          <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90">
+          <Button onClick={() => onNavigate('new-opportunity')} className="bg-accent text-accent-foreground hover:bg-accent/90">
             <Plus className="mr-2 h-4 w-4" />
             Analyze Property
           </Button>

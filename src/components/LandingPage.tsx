@@ -8,30 +8,7 @@ interface LandingPageProps {
 
 export function LandingPage({ onNavigate }: LandingPageProps) {
   return (
-    <div className="min-h-screen bg-background">
-      <nav className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-3 sm:py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-accent/20">
-                <Brain className="h-5 w-5 sm:h-6 sm:w-6 text-accent" weight="duotone" />
-              </div>
-              <span className="font-display text-xl sm:text-2xl font-bold">EstateMind</span>
-            </div>
-            <div className="flex items-center gap-3 sm:gap-6">
-              <button
-                onClick={() => onNavigate('pricing')}
-                className="text-xs sm:text-sm font-medium text-foreground/80 transition-colors hover:text-foreground"
-              >
-                Pricing
-              </button>
-              <Button onClick={() => onNavigate('dashboard')} variant="default" size="sm" className="sm:h-10">
-                Dashboard
-              </Button>
-            </div>
-          </div>
-        </div>
-      </nav>
+    <div className="bg-background">
 
       <section className="relative overflow-hidden border-b border-border">
         <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-background to-primary/10" />
@@ -54,7 +31,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 sm:gap-4 px-4 sm:px-0">
               <Button
                 size="lg"
-                onClick={() => onNavigate('analyzer')}
+                onClick={() => onNavigate('new-opportunity')}
                 className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto"
               >
                 <Brain className="mr-2 h-5 w-5" />
@@ -130,7 +107,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             <div className="mt-8 sm:mt-10 px-4 sm:px-0">
               <Button
                 size="lg"
-                onClick={() => onNavigate('analyzer')}
+                onClick={() => onNavigate('new-opportunity')}
                 className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto"
               >
                 <Brain className="mr-2 h-5 w-5" />

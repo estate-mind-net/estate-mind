@@ -1,4 +1,4 @@
-import { Check, Brain } from '@phosphor-icons/react'
+import { Check } from '@phosphor-icons/react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
@@ -77,28 +77,7 @@ export function PricingPage({ onNavigate }: PricingPageProps) {
   ]
 
   return (
-    <div className="min-h-screen bg-background">
-      <nav className="border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button onClick={() => onNavigate('landing')} className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/20">
-                <Brain className="h-6 w-6 text-accent" weight="duotone" />
-              </div>
-              <span className="font-display text-2xl font-bold">EstateMind</span>
-            </button>
-            <div className="flex items-center gap-6">
-              <button
-                onClick={() => onNavigate('dashboard')}
-                className="text-sm font-medium text-foreground/80 transition-colors hover:text-foreground"
-              >
-                Dashboard
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
+    <div className="bg-background">
       <div className="mx-auto max-w-7xl px-6 py-24">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="font-display text-5xl font-bold tracking-tight">

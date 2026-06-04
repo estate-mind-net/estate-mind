@@ -47,9 +47,17 @@ export interface SupabaseError {
 }
 
 export interface SupabaseAuth {
-  signUp: (credentials: { email: string; password: string }) => Promise<SupabaseResponse<{ user: unknown }>>
+  signUp: (credentials: {
+    email: string
+    password: string
+    options?: {
+      data?: Record<string, unknown>
+      emailRedirectTo?: string
+    }
+  }) => Promise<SupabaseResponse<{ user: unknown }>>
   signIn: (credentials: { email: string; password: string }) => Promise<SupabaseResponse<{ user: unknown }>>
   signOut: () => Promise<SupabaseResponse<void>>
+  resetPasswordForEmail: (email: string, options?: { redirectTo?: string }) => Promise<SupabaseResponse<void>>
   getUser: () => Promise<SupabaseResponse<unknown>>
   getSession: () => Promise<SupabaseResponse<unknown>>
   onAuthStateChange: (callback: (event: string, session: unknown) => void) => { data: { subscription: { unsubscribe: () => void } } }
@@ -87,6 +95,13 @@ const wrapClient = (client: RealSupabaseClient): SupabaseClient => ({
     },
     signOut: async () => {
       const { error } = await client.auth.signOut()
+      return {
+        data: null,
+        error: error ? { message: error.message, code: error.code, details: error.message } : null,
+      }
+    },
+    resetPasswordForEmail: async (email, options) => {
+      const { error } = await client.auth.resetPasswordForEmail(email, options)
       return {
         data: null,
         error: error ? { message: error.message, code: error.code, details: error.message } : null,
@@ -144,7 +159,9 @@ const wrapClient = (client: RealSupabaseClient): SupabaseClient => ({
 
 export const getSupabaseClient = (): SupabaseClient | null => {
   if (!hasSupabaseConfig()) {
-    console.warn('Supabase configuration not found. Running in mock mode.')
+    console.error(
+      'Supabase configuration not found. Expected NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY. Running in mock mode.',
+    )
     return null
   }
 

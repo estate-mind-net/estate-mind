@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { LandingPage } from '@/components/LandingPage'
 import { Dashboard } from '@/components/Dashboard'
 import { DealAnalyzer } from '@/components/DealAnalyzer'
@@ -8,25 +11,81 @@ import { PricingPage } from '@/components/PricingPage'
 import { PortfolioAnalytics } from '@/components/PortfolioAnalytics'
 import { MyOpportunities } from '@/components/MyOpportunities'
 import { InvestmentPipeline } from '@/components/InvestmentPipeline'
+import { PresentationPage } from '@/components/PresentationPage'
+import { FoundingPartnerPresentation } from '@/components/FoundingPartnerPresentation'
+import { AppNavigation } from '@/components/AppNavigation'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { LoginPage } from '@/pages/LoginPage'
+import { RegisterPage } from '@/pages/RegisterPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
+import { SettingsPage } from '@/pages/SettingsPage'
+import { NewOpportunityPage } from '@/pages/NewOpportunityPage'
+import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
 import { persistDealAnalyzerResult } from '@/services/supabase/dealPersistence.service'
 import type { Property, InvestmentAnalysis, Opportunity } from '@/lib/types'
 
-type Page = 'landing' | 'dashboard' | 'analyzer' | 'report' | 'opportunities' | 'pricing' | 'analytics' | 'pipeline'
+interface AuthPageGuardProps {
+  children: ReactNode
+}
+
+function AuthPageGuard({ children }: AuthPageGuardProps) {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading your workspace...</p>
+      </div>
+    )
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
+
+function WorkspaceShell({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background">
+      <AppNavigation />
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="mx-auto max-w-7xl">{children}</div>
+      </div>
+    </div>
+  )
+}
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('landing')
+  const navigate = useNavigate()
   const [currentAnalysis, setCurrentAnalysis] = useState<InvestmentAnalysis | undefined>()
 
   const handleNavigate = (page: string, data?: unknown) => {
     if (page === 'report' && data) {
       setCurrentAnalysis(data as InvestmentAnalysis)
-      setCurrentPage('report')
-    } else {
-      setCurrentPage(page as Page)
+      navigate('/reports')
+      return
     }
-    window.scrollTo(0, 0)
+
+    const routeMap: Record<string, string> = {
+      landing: '/',
+      dashboard: '/dashboard',
+      analyzer: '/analyzer',
+      opportunities: '/opportunities',
+      'new-opportunity': '/opportunities/new',
+      pricing: '/pricing',
+      analytics: '/analytics',
+      pipeline: '/pipeline',
+      settings: '/settings',
+      presentation: '/presentation',
+      'founding-partner-presentation': '/presentation/founding-partner',
+      reports: '/reports',
+    }
+
+    navigate(routeMap[page] ?? '/')
   }
 
   const handleAnalyze = async (property: Property) => {
@@ -49,75 +108,117 @@ function App() {
     }
 
     setCurrentAnalysis(analysis)
-    setCurrentPage('report')
-    window.scrollTo(0, 0)
+    navigate('/reports')
   }
 
   const handleViewOpportunity = (opportunity: Opportunity) => {
     if (opportunity.analysis) {
       setCurrentAnalysis(opportunity.analysis)
-      setCurrentPage('report')
-      window.scrollTo(0, 0)
+      navigate('/reports')
     }
+  }
+
+  const ReportsContent = () => {
+    if (!currentAnalysis) {
+      return (
+        <Card className="border-dashed p-10 text-center">
+          <h1 className="font-display text-2xl font-bold">No report selected</h1>
+          <p className="mx-auto mt-3 max-w-xl text-muted-foreground">
+            Run a new analysis from the Deal Analyzer or open an opportunity with a saved analysis.
+          </p>
+          <Button className="mt-6" onClick={() => navigate('/opportunities/new')}>
+            Analyze Property
+          </Button>
+        </Card>
+      )
+    }
+
+    return <InvestmentReport analysis={currentAnalysis} onBack={() => navigate('/dashboard')} />
   }
 
   return (
     <>
-      {currentPage === 'landing' && <LandingPage onNavigate={handleNavigate} />}
-      
-      {currentPage === 'pricing' && <PricingPage onNavigate={handleNavigate} />}
-      
-      {currentPage === 'dashboard' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <Dashboard onNavigate={handleNavigate} />
-          </div>
-        </div>
-      )}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <div className="min-h-screen bg-background">
+              <AppNavigation />
+              <LandingPage onNavigate={handleNavigate} />
+            </div>
+          }
+        />
+        <Route
+          path="/pricing"
+          element={
+            <div className="min-h-screen bg-background">
+              <AppNavigation />
+              <PricingPage onNavigate={handleNavigate} />
+            </div>
+          }
+        />
+        <Route
+          path="/login"
+          element={
+            <AuthPageGuard>
+              <LoginPage />
+            </AuthPageGuard>
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <AuthPageGuard>
+              <RegisterPage />
+            </AuthPageGuard>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <AuthPageGuard>
+              <ForgotPasswordPage />
+            </AuthPageGuard>
+          }
+        />
 
-      {currentPage === 'pipeline' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <InvestmentPipeline 
-              onBack={() => handleNavigate('dashboard')}
-              onViewOpportunity={handleViewOpportunity}
-            />
-          </div>
-        </div>
-      )}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<WorkspaceShell><Dashboard onNavigate={handleNavigate} /></WorkspaceShell>} />
+          <Route
+            path="/opportunities"
+            element={
+              <WorkspaceShell>
+                <MyOpportunities onNavigate={handleNavigate} onBack={() => navigate('/dashboard')} />
+              </WorkspaceShell>
+            }
+          />
+          <Route
+            path="/opportunities/new"
+            element={
+              <WorkspaceShell>
+                <NewOpportunityPage />
+              </WorkspaceShell>
+            }
+          />
+          <Route path="/reports" element={<WorkspaceShell><ReportsContent /></WorkspaceShell>} />
+          <Route path="/settings" element={<WorkspaceShell><SettingsPage /></WorkspaceShell>} />
 
-      {currentPage === 'opportunities' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <MyOpportunities onNavigate={handleNavigate} onBack={() => handleNavigate('dashboard')} />
-          </div>
-        </div>
-      )}
-      
-      {currentPage === 'analyzer' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <DealAnalyzer onAnalyze={handleAnalyze} />
-        </div>
-      )}
-      
-      {currentPage === 'report' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <InvestmentReport 
-              analysis={currentAnalysis} 
-              onBack={() => handleNavigate('dashboard')} 
-            />
-          </div>
-        </div>
-      )}
+          <Route path="/analyzer" element={<WorkspaceShell><DealAnalyzer onAnalyze={handleAnalyze} /></WorkspaceShell>} />
+          <Route
+            path="/pipeline"
+            element={
+              <WorkspaceShell>
+                <InvestmentPipeline onBack={() => navigate('/dashboard')} onViewOpportunity={handleViewOpportunity} />
+              </WorkspaceShell>
+            }
+          />
+          <Route path="/analytics" element={<WorkspaceShell><PortfolioAnalytics onBack={() => navigate('/dashboard')} /></WorkspaceShell>} />
+        </Route>
 
-      {currentPage === 'analytics' && (
-        <div className="min-h-screen bg-background p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            <PortfolioAnalytics onBack={() => handleNavigate('dashboard')} />
-          </div>
-        </div>
-      )}
+        <Route path="/presentation" element={<PresentationPage onExit={() => navigate('/')} />} />
+        <Route path="/presentation/founding-partner" element={<FoundingPartnerPresentation onExit={() => navigate('/')} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
 
       <Toaster />
     </>

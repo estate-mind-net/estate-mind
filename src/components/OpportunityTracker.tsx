@@ -359,7 +359,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
           <p className="mt-2 text-sm sm:text-base text-foreground/70">Manage your investment pipeline with advanced filters</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={() => onNavigate('analyzer')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
+          <Button onClick={() => onNavigate('new-opportunity')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
             <Plus className="mr-2 h-5 w-5" />
             Add Opportunity
           </Button>
@@ -629,7 +629,7 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                     Clear Filters
                   </Button>
                 ) : (
-                  <Button onClick={() => onNavigate('analyzer')} className="mt-6 bg-accent text-accent-foreground hover:bg-accent/90">
+                  <Button onClick={() => onNavigate('new-opportunity')} className="mt-6 bg-accent text-accent-foreground hover:bg-accent/90">
                     <Brain className="mr-2 h-5 w-5" />
                     Analyze First Property
                   </Button>

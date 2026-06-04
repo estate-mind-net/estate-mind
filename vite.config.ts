@@ -581,6 +581,7 @@ export default defineConfig(({ mode }) => {
   const debugOpenAIResponse = env.DEBUG_OPENAI_RESPONSE === '1'
 
   return {
+    envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     plugins: [
       openAIDealAnalysisPlugin({
         apiKey: openAIKey,

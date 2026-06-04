@@ -15,9 +15,9 @@ export interface AuthSession {
 }
 
 export interface SignUpCredentials {
+  fullName: string
   email: string
   password: string
-  name?: string
 }
 
 export interface SignInCredentials {
@@ -40,6 +40,11 @@ export class AuthService {
       const { data, error } = await client.auth.signUp({
         email: credentials.email,
         password: credentials.password,
+        options: {
+          data: {
+            full_name: credentials.fullName,
+          },
+        },
       })
 
       if (error) {
@@ -108,6 +113,32 @@ export class AuthService {
     } catch (error) {
       return {
         error: error instanceof Error ? error : new Error('Unknown error during sign out'),
+      }
+    }
+  }
+
+  async resetPassword(email: string, redirectTo?: string): Promise<{ error: Error | null }> {
+    const client = getSupabaseClient()
+
+    if (!client) {
+      return {
+        error: new Error('Supabase not configured. Password reset is not available in mock mode.'),
+      }
+    }
+
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      })
+
+      if (error) {
+        return { error: new Error(error.message) }
+      }
+
+      return { error: null }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error : new Error('Unknown error during password reset'),
       }
     }
   }

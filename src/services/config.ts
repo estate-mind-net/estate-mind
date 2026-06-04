@@ -1,7 +1,19 @@
+const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+
+if (import.meta.env.DEV) {
+  const maskedUrl = supabaseUrl ? `${supabaseUrl.slice(0, 20)}...` : 'missing'
+  console.info('[supabase-config]', {
+    urlPresent: Boolean(supabaseUrl),
+    anonKeyPresent: Boolean(supabaseAnonKey),
+    urlPreview: maskedUrl,
+  })
+}
+
 export const API_CONFIG = {
   supabase: {
-    url: import.meta.env.NEXT_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '',
-    anonKey: import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
   },
   ai: {
     openaiApiKey: import.meta.env.VITE_OPENAI_API_KEY || '',
