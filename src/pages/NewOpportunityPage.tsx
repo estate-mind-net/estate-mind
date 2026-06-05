@@ -87,7 +87,19 @@ export function NewOpportunityPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
 
+    console.info('[new-opportunity] submit check', {
+      authUserId: user?.id ?? null,
+      organizationId: organization?.id ?? null,
+      profileId: profile?.id ?? null,
+      profileOrganizationId: profile?.organization_id ?? null,
+    })
+
     if (!user?.id || !organization?.id) {
+      console.error('[new-opportunity] blocked: missing user or organization', {
+        hasUser: Boolean(user?.id),
+        hasOrganization: Boolean(organization?.id),
+        profileOrganizationId: profile?.organization_id ?? null,
+      })
       toast.error('Your account does not have an active organization yet.')
       return
     }

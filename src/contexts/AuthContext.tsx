@@ -1,7 +1,7 @@
-import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { authService } from '@/services/supabase/auth.service'
-import { getSupabaseClient } from '@/services/supabase/client'
-import type { AuthContextValue, Organization, Profile } from '@/types/auth'
+﻿import { createContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { authService } from "@/services/supabase/auth.service"
+import { getSupabaseClient } from "@/services/supabase/client"
+import type { AuthContextValue, Organization, Profile } from "@/types/auth"
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
@@ -21,11 +21,11 @@ const logAuthOrgDebug = (message: string, payload?: unknown) => {
 }
 
 const extractErrorMessage = (error: unknown): string => {
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message?: unknown }).message ?? 'Unknown error')
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message ?? "Unknown error")
   }
 
-  return 'Unknown error'
+  return "Unknown error"
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -43,61 +43,63 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return
     }
 
-    logAuthOrgDebug('loading organization context', { userId })
+    // profiles.id is gen_random_uuid() and NOT the auth user id.
+    // The FK to auth.users is profiles.user_id. Always query by user_id.
+    console.info("[auth-org] resolving profile", { authUserId: userId })
 
-    const profileByIdResult = await client
-      .from('profiles')
-      .select('id,organization_id,full_name,role,user_id,email,created_at')
-      .eq('id', userId)
+    const { data: profileData, error: profileError } = await client
+      .from("profiles")
+      .select("id,organization_id,full_name,role,user_id,email,created_at")
+      .eq("user_id", userId)
       .maybeSingle()
 
-    let nextProfile = (profileByIdResult.data as Profile | null) ?? null
-
-    if (!nextProfile && !profileByIdResult.error) {
-      const profileByUserIdResult = await client
-        .from('profiles')
-        .select('id,organization_id,full_name,role,user_id,email,created_at')
-        .eq('user_id', userId)
-        .maybeSingle()
-
-      nextProfile = (profileByUserIdResult.data as Profile | null) ?? null
-
-      if (profileByUserIdResult.error) {
-        logAuthOrgDebug('profile query by user_id failed', {
-          userId,
-          error: profileByUserIdResult.error,
-        })
-      }
+    if (profileError) {
+      logAuthOrgDebug("profile query failed", { userId, error: profileError })
     }
 
-    if (profileByIdResult.error) {
-      logAuthOrgDebug('profile query by id failed', {
-        userId,
-        error: profileByIdResult.error,
-      })
-    }
-
+    const nextProfile = (profileData as Profile | null) ?? null
     setProfile(nextProfile)
 
-    logAuthOrgDebug('profile resolved', {
-      userId,
+    console.info("[auth-org] profile resolved", {
+      authUserId: userId,
       profileId: nextProfile?.id ?? null,
       profileOrganizationId: nextProfile?.organization_id ?? null,
+      profileRole: nextProfile?.role ?? null,
     })
 
-    if (nextProfile?.organization_id) {
-      const { data: organizationData, error: organizationError } = await client
-        .from('organizations')
-        .select('id,name,type,subscription_tier,created_at')
-        .eq('id', nextProfile.organization_id)
+    // Resolve organization_id: prefer profiles.organization_id, fall back to organization_members.
+    let resolvedOrgId: string | null = nextProfile?.organization_id ?? null
+
+    if (!resolvedOrgId) {
+      const { data: memberRow, error: memberError } = await client
+        .from("organization_members")
+        .select("organization_id")
+        .eq("user_id", userId)
+        .eq("role", "owner")
         .maybeSingle()
 
-      logAuthOrgDebug('organization query result', {
-        userId,
-        profileId: nextProfile.id,
-        profileOrganizationId: nextProfile.organization_id,
-        organizationData,
-        organizationError,
+      if (memberError) {
+        logAuthOrgDebug("organization_members fallback failed", { userId, error: memberError })
+      }
+
+      resolvedOrgId = (memberRow as { organization_id: string } | null)?.organization_id ?? null
+      logAuthOrgDebug("organization_members fallback", { userId, resolvedOrgId })
+    }
+
+    console.info("[auth-org] resolved org id", { authUserId: userId, resolvedOrgId })
+
+    if (resolvedOrgId) {
+      const { data: organizationData, error: organizationError } = await client
+        .from("organizations")
+        .select("id,name,type,subscription_tier,created_at")
+        .eq("id", resolvedOrgId)
+        .maybeSingle()
+
+      console.info("[auth-org] organization query result", {
+        authUserId: userId,
+        resolvedOrgId,
+        organizationId: (organizationData as { id?: string } | null)?.id ?? null,
+        error: organizationError ?? null,
       })
 
       if (organizationData) {
@@ -106,15 +108,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       if (organizationError) {
-        console.error('[auth-org] organization query failed', {
-          userId,
-          profileId: nextProfile.id,
-          profileOrganizationId: nextProfile.organization_id,
-          error: organizationError,
-        })
+        console.error("[auth-org] organization query failed", { userId, resolvedOrgId, error: organizationError })
       }
     }
 
+    console.warn("[auth-org] no organization resolved", { authUserId: userId, resolvedOrgId })
     setOrganization(null)
   }
 
@@ -140,7 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser({ id: currentUser.id, email: currentUser.email })
         await loadProfileAndOrganization(currentUser.id)
       } catch (error) {
-        console.error('[auth-org] failed to initialize profile/organization context', {
+        console.error("[auth-org] failed to initialize profile/organization context", {
           userId: currentUser.id,
           error: extractErrorMessage(error),
         })
@@ -174,7 +172,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser({ id: nextUser.id, email: nextUser.email })
         await loadProfileAndOrganization(nextUser.id)
       } catch (error) {
-        console.error('[auth-org] failed to refresh profile/organization context', {
+        console.error("[auth-org] failed to refresh profile/organization context", {
           userId: nextUser.id,
           error: extractErrorMessage(error),
         })
@@ -201,6 +199,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       loading,
       signOut: async () => {
         await authService.signOut()
+        setUser(null)
+        setProfile(null)
+        setOrganization(null)
       },
     }),
     [user, profile, organization, loading],

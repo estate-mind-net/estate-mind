@@ -347,6 +347,15 @@ export class OpportunityWorkspaceService {
     }
 
     const createdBy = context.userId || context.profileId || null
+
+    console.info('[opportunity-workspace] createOpportunity', {
+      organizationId: context.organizationId,
+      userId: context.userId,
+      profileId: context.profileId ?? null,
+      createdBy,
+      title: input.title,
+    })
+
     const propertyId = await this.insertProperty(context.organizationId, createdBy, input)
 
     try {
