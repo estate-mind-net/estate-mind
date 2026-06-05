@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/hooks/useAuth'
+import type { Property } from '@/lib/types'
+import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
 import { isProduction } from '@/services/config'
 import { opportunityWorkspaceService, type CreateOpportunityInput } from '@/services/supabase/opportunityWorkspace.service'
 import type { PropertyCondition, PropertyType } from '@/lib/types'
@@ -74,6 +76,23 @@ const toPayload = (formData: NewOpportunityFormData): CreateOpportunityInput => 
   description: formData.description.trim(),
 })
 
+const toPropertyForAnalysis = (input: CreateOpportunityInput): Property => ({
+  id: `new-opportunity-${Date.now()}`,
+  title: input.title,
+  country: input.country,
+  city: input.city,
+  district: input.district,
+  propertyType: input.propertyType,
+  askingPrice: input.askingPrice,
+  currency: input.currency,
+  sizeSqm: input.sizeSqm,
+  bedrooms: input.bedrooms,
+  condition: input.condition,
+  listingUrl: input.listingUrl,
+  description: input.description,
+  createdAt: new Date().toISOString(),
+})
+
 export function NewOpportunityPage() {
   const navigate = useNavigate()
   const { user, profile, organization } = useAuth()
@@ -107,15 +126,40 @@ export function NewOpportunityPage() {
     setIsSaving(true)
 
     try {
-      const result = await opportunityWorkspaceService.createOpportunity(toPayload(formData), {
+      const payload = toPayload(formData)
+
+      const result = await opportunityWorkspaceService.createOpportunity(payload, {
         organizationId: organization.id,
         userId: user.id,
         profileId: profile?.id,
       })
 
-      toast.success('Opportunity created successfully.')
-      void result
-      navigate('/opportunities')
+      let warningMessage: string | null = null
+
+      try {
+        const analysis = await generateDealAnalysis(toPropertyForAnalysis(payload))
+        const persistResult = await opportunityWorkspaceService.persistOpportunityAnalysis(analysis, {
+          organizationId: organization.id,
+          userId: user.id,
+          opportunityId: result.opportunityId,
+        })
+
+        if (!persistResult.saved) {
+          warningMessage = persistResult.warning ?? 'Opportunity was saved, but AI analysis note could not be persisted.'
+        }
+      } catch (analysisError) {
+        warningMessage = analysisError instanceof Error
+          ? analysisError.message
+          : 'Opportunity was saved, but AI analysis failed.'
+      }
+
+      if (warningMessage) {
+        toast.warning(`Opportunity saved. AI analysis warning: ${warningMessage}`)
+      } else {
+        toast.success('Opportunity and AI analysis saved successfully.')
+      }
+
+      navigate(`/opportunities/${result.opportunityId}`)
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : 'Failed to create opportunity.'
       if (isProduction()) {

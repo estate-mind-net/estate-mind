@@ -43,6 +43,10 @@ export interface OpportunityNoteSnapshot {
   parsedAnalysis: InvestmentAnalysis | null
 }
 
+export interface OpportunityWorkspaceDetail extends OpportunityWorkspaceItem {
+  notes: OpportunityNoteSnapshot[]
+}
+
 export interface OpportunityWorkspaceItem {
   id: string
   propertyId: string
@@ -115,6 +119,11 @@ export interface CreateOpportunityResult {
   opportunityId: string
 }
 
+export interface PersistOpportunityAnalysisResult {
+  saved: boolean
+  warning?: string
+}
+
 const isCreatedByIssue = (message: string) => {
   const lower = message.toLowerCase()
   return lower.includes('created_by')
@@ -139,6 +148,24 @@ const shouldRetryWithoutListingUrl = (message: string) => {
 }
 
 const stageFallback: Opportunity['status'] = 'initial-analysis'
+
+const safeNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  return null
+}
+
+const estimateRoi = (analysis: InvestmentAnalysis): number | null => {
+  const appreciation = safeNumber(analysis.appreciationPotential.oneYear)
+  const rentalYieldPct = safeNumber(analysis.rentalYieldEstimate.percentage)
+  if (appreciation === null || rentalYieldPct === null) {
+    return null
+  }
+
+  return Number((appreciation + rentalYieldPct).toFixed(2))
+}
 
 const parseAnalysisSnapshot = (content: string | null): InvestmentAnalysis | null => {
   if (!content) {
@@ -208,7 +235,112 @@ const mapRowsToItem = (
   }
 }
 
+const isMissingCreatedByColumn = (message: string) => {
+  const lower = message.toLowerCase()
+  return lower.includes('created_by') && lower.includes('column') && lower.includes('does not exist')
+}
+
+const isMissingEstimatedRoiColumn = (message: string) => {
+  const lower = message.toLowerCase()
+  return lower.includes('estimated_roi') && lower.includes('column') && lower.includes('does not exist')
+}
+
 export class OpportunityWorkspaceService {
+  private buildAiNoteContent(analysis: InvestmentAnalysis) {
+    return {
+      ...analysis,
+      snapshot: {
+        estimatedMonthlyRent: analysis.rentalYieldEstimate.monthly,
+        roiEstimate: estimateRoi(analysis),
+        rentalYield: analysis.rentalYieldEstimate.percentage,
+        airbnbYield: analysis.airbnbPotential.percentage,
+        score: analysis.score.overall,
+        recommendation: analysis.recommendation,
+        explanation: analysis.executiveSummary,
+      },
+    }
+  }
+
+  private async updateOpportunityWithAnalysis(opportunityId: string, analysis: InvestmentAnalysis): Promise<void> {
+    const client = getSupabaseClient()
+    if (!client) {
+      throw new Error('Supabase is unavailable.')
+    }
+
+    const summary = `AI analyzed ${new Date().toISOString()}. Recommendation: ${analysis.recommendation}.`
+    const basePayload = {
+      expected_monthly_rent: analysis.rentalYieldEstimate.monthly,
+      stage: 'initial-analysis',
+      notes: summary,
+    }
+
+    const firstAttempt = await client
+      .from('opportunities')
+      .update({
+        ...basePayload,
+        estimated_roi: estimateRoi(analysis),
+      })
+      .eq('id', opportunityId)
+
+    if (!firstAttempt.error) {
+      return
+    }
+
+    const firstMessage = firstAttempt.error.message ?? firstAttempt.error.details ?? 'Failed to update opportunity analysis fields.'
+    if (!isMissingEstimatedRoiColumn(firstMessage)) {
+      throw new Error(firstMessage)
+    }
+
+    const fallbackAttempt = await client
+      .from('opportunities')
+      .update(basePayload)
+      .eq('id', opportunityId)
+
+    if (fallbackAttempt.error) {
+      throw new Error(fallbackAttempt.error.message ?? fallbackAttempt.error.details ?? 'Failed to update opportunity analysis fields.')
+    }
+  }
+
+  private async insertAnalysisNote(
+    organizationId: string,
+    userId: string,
+    opportunityId: string,
+    analysis: InvestmentAnalysis,
+  ): Promise<void> {
+    const client = getSupabaseClient()
+    if (!client) {
+      throw new Error('Supabase is unavailable.')
+    }
+
+    const payloadWithCreatedBy: Record<string, unknown> = {
+      organization_id: organizationId,
+      opportunity_id: opportunityId,
+      content: JSON.stringify(this.buildAiNoteContent(analysis)),
+      created_by: userId,
+    }
+
+    const firstAttempt = await client.from('notes').insert([payloadWithCreatedBy])
+    if (!firstAttempt.error) {
+      return
+    }
+
+    const firstMessage = firstAttempt.error.message ?? firstAttempt.error.details ?? 'Failed to persist AI note.'
+    if (!isMissingCreatedByColumn(firstMessage)) {
+      throw new Error(firstMessage)
+    }
+
+    const payloadWithoutCreatedBy = {
+      organization_id: organizationId,
+      opportunity_id: opportunityId,
+      content: JSON.stringify(this.buildAiNoteContent(analysis)),
+    }
+
+    const secondAttempt = await client.from('notes').insert([payloadWithoutCreatedBy])
+    if (secondAttempt.error) {
+      throw new Error(secondAttempt.error.message ?? secondAttempt.error.details ?? 'Failed to persist AI note.')
+    }
+  }
+
   private async insertProperty(
     organizationId: string,
     createdBy: string | null,
@@ -364,6 +496,92 @@ export class OpportunityWorkspaceService {
     } catch (error) {
       await client.from('properties').delete().eq('id', propertyId)
       throw error
+    }
+  }
+
+  async persistOpportunityAnalysis(
+    analysis: InvestmentAnalysis,
+    context: {
+      organizationId: string
+      userId: string
+      opportunityId: string
+    },
+  ): Promise<PersistOpportunityAnalysisResult> {
+    try {
+      await this.updateOpportunityWithAnalysis(context.opportunityId, analysis)
+      await this.insertAnalysisNote(context.organizationId, context.userId, context.opportunityId, analysis)
+      return { saved: true }
+    } catch (error) {
+      return {
+        saved: false,
+        warning: error instanceof Error ? error.message : 'Failed to persist AI analysis for this opportunity.',
+      }
+    }
+  }
+
+  async getOpportunityById(opportunityId: string, options?: OpportunityWorkspaceQueryOptions): Promise<OpportunityWorkspaceDetail | null> {
+    const client = getSupabaseClient()
+    const organizationId = options?.organizationId
+
+    if (!client || !organizationId) {
+      return null
+    }
+
+    const [opportunityResult, propertyResult, notesResult] = await Promise.all([
+      client
+        .from('opportunities')
+        .select('id,property_id,title,stage,priority,expected_monthly_rent,created_at,updated_at')
+        .eq('organization_id', organizationId)
+        .eq('id', opportunityId)
+        .maybeSingle(),
+      client
+        .from('properties')
+        .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at')
+        .eq('organization_id', organizationId),
+      client
+        .from('notes')
+        .select('id,opportunity_id,content,created_at')
+        .eq('organization_id', organizationId)
+        .eq('opportunity_id', opportunityId)
+        .order('created_at', { ascending: false }),
+    ])
+
+    if (opportunityResult.error) {
+      throw new Error(opportunityResult.error.message)
+    }
+
+    if (propertyResult.error) {
+      throw new Error(propertyResult.error.message)
+    }
+
+    if (notesResult.error) {
+      throw new Error(notesResult.error.message)
+    }
+
+    const opportunity = (opportunityResult.data as OpportunityRow | null) ?? null
+    if (!opportunity) {
+      return null
+    }
+
+    const properties = (propertyResult.data ?? []) as PropertyRow[]
+    const property = properties.find((item) => item.id === opportunity.property_id)
+    if (!property) {
+      return null
+    }
+
+    const notes = ((notesResult.data ?? []) as NoteRow[]).map((note) => ({
+      id: note.id,
+      content: note.content ?? '',
+      createdAt: note.created_at ?? opportunity.updated_at ?? opportunity.created_at ?? new Date().toISOString(),
+      parsedAnalysis: parseAnalysisSnapshot(note.content ?? null),
+    }))
+
+    const latestNote = notes[0]
+    const item = mapRowsToItem(opportunity, property, latestNote)
+
+    return {
+      ...item,
+      notes,
     }
   }
 
