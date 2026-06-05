@@ -124,11 +124,6 @@ export interface PersistOpportunityAnalysisResult {
   warning?: string
 }
 
-const isCreatedByIssue = (message: string) => {
-  const lower = message.toLowerCase()
-  return lower.includes('created_by')
-}
-
 const isListingUrlIssue = (message: string) => {
   const lower = message.toLowerCase()
   return lower.includes('listing_url')
@@ -140,7 +135,8 @@ const isColumnIssue = (message: string) => {
 }
 
 const shouldRetryWithoutCreatedBy = (message: string) => {
-  return isCreatedByIssue(message) && (isColumnIssue(message) || message.toLowerCase().includes('foreign key'))
+  const lower = message.toLowerCase()
+  return lower.includes('created_by') && (isColumnIssue(message) || lower.includes('foreign key'))
 }
 
 const shouldRetryWithoutListingUrl = (message: string) => {
@@ -235,11 +231,6 @@ const mapRowsToItem = (
   }
 }
 
-const isMissingCreatedByColumn = (message: string) => {
-  const lower = message.toLowerCase()
-  return lower.includes('created_by') && lower.includes('column') && lower.includes('does not exist')
-}
-
 const isMissingEstimatedRoiColumn = (message: string) => {
   const lower = message.toLowerCase()
   return lower.includes('estimated_roi') && lower.includes('column') && lower.includes('does not exist')
@@ -303,7 +294,6 @@ export class OpportunityWorkspaceService {
 
   private async insertAnalysisNote(
     organizationId: string,
-    userId: string,
     opportunityId: string,
     analysis: InvestmentAnalysis,
   ): Promise<void> {
@@ -312,33 +302,20 @@ export class OpportunityWorkspaceService {
       throw new Error('Supabase is unavailable.')
     }
 
-    const payloadWithCreatedBy: Record<string, unknown> = {
-      organization_id: organizationId,
-      opportunity_id: opportunityId,
-      content: JSON.stringify(this.buildAiNoteContent(analysis)),
-      created_by: userId,
-    }
-
-    const firstAttempt = await client.from('notes').insert([payloadWithCreatedBy])
-    if (!firstAttempt.error) {
-      return
-    }
-
-    const firstMessage = firstAttempt.error.message ?? firstAttempt.error.details ?? 'Failed to persist AI note.'
-    if (!isMissingCreatedByColumn(firstMessage)) {
-      throw new Error(firstMessage)
-    }
-
-    const payloadWithoutCreatedBy = {
+    const payload = {
       organization_id: organizationId,
       opportunity_id: opportunityId,
       content: JSON.stringify(this.buildAiNoteContent(analysis)),
     }
 
-    const secondAttempt = await client.from('notes').insert([payloadWithoutCreatedBy])
-    if (secondAttempt.error) {
-      throw new Error(secondAttempt.error.message ?? secondAttempt.error.details ?? 'Failed to persist AI note.')
+    console.log('[AI NOTE] saving', payload)
+    const insertResult = await client.from('notes').insert([payload])
+    if (insertResult.error) {
+      console.error('[AI NOTE] failed', insertResult.error)
+      throw new Error(insertResult.error.message ?? insertResult.error.details ?? 'Failed to persist AI note.')
     }
+
+    console.log('[AI NOTE] saved successfully')
   }
 
   private async insertProperty(
@@ -503,13 +480,12 @@ export class OpportunityWorkspaceService {
     analysis: InvestmentAnalysis,
     context: {
       organizationId: string
-      userId: string
       opportunityId: string
     },
   ): Promise<PersistOpportunityAnalysisResult> {
     try {
       await this.updateOpportunityWithAnalysis(context.opportunityId, analysis)
-      await this.insertAnalysisNote(context.organizationId, context.userId, context.opportunityId, analysis)
+      await this.insertAnalysisNote(context.organizationId, context.opportunityId, analysis)
       return { saved: true }
     } catch (error) {
       return {

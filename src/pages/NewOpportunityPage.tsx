@@ -140,7 +140,6 @@ export function NewOpportunityPage() {
         const analysis = await generateDealAnalysis(toPropertyForAnalysis(payload))
         const persistResult = await opportunityWorkspaceService.persistOpportunityAnalysis(analysis, {
           organizationId: organization.id,
-          userId: user.id,
           opportunityId: result.opportunityId,
         })
 

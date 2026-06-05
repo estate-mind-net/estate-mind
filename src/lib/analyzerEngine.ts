@@ -1,17 +1,49 @@
 import type { Property, InvestmentAnalysis, InvestmentScore } from './types'
+import { deriveDeterministicEstimates } from './utils/deterministicEstimates'
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+
+const stableHash = (value: string): number => {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
 
 export function generateMockAnalysis(property: Property): InvestmentAnalysis {
-  const pricePerSqm = property.askingPrice / property.sizeSqm
-  
+  const deterministic = deriveDeterministicEstimates({
+    askingPrice: property.askingPrice,
+    sizeSqm: property.sizeSqm,
+    city: property.city,
+    country: property.country,
+    bedrooms: property.bedrooms,
+    condition: property.condition,
+    currency: property.currency,
+    expectedRent: property.expectedRent,
+  })
+
+  const locationHash = stableHash(`${property.city.toLowerCase()}|${property.country.toLowerCase()}`)
+
   const baseScore = {
     overall: 0,
-    rentalYield: Math.min(95, Math.max(40, 75 + Math.random() * 20)),
-    airbnbPotential: Math.min(95, Math.max(50, 80 + Math.random() * 15)),
-    appreciation: Math.min(90, Math.max(50, 70 + Math.random() * 20)),
-    renovation: property.condition === 'needs-renovation' ? Math.max(60, 70 + Math.random() * 20) : Math.min(95, 85 + Math.random() * 10),
-    legal: Math.min(98, Math.max(70, 85 + Math.random() * 13)),
-    liquidity: Math.min(90, Math.max(55, 70 + Math.random() * 20)),
-    energy: Math.min(85, Math.max(50, 65 + Math.random() * 20))
+    rentalYield: clamp(Math.round(36 + deterministic.rentalYieldPct * 8), 42, 94),
+    airbnbPotential: clamp(Math.round(28 + deterministic.airbnbYieldPct * 6.4), 45, 95),
+    appreciation: clamp(Math.round(45 + deterministic.appreciationOneYearPct * 6), 50, 92),
+    renovation: clamp(
+      property.condition === 'needs-renovation'
+        ? Math.round(55 + Math.max(deterministic.renovationRoiPct, 0) * 0.28)
+        : Math.round(70 + Math.max(deterministic.renovationRoiPct, 0) * 0.12),
+      48,
+      92,
+    ),
+    legal: clamp(66 + (locationHash % 26), 60, 92),
+    liquidity: clamp(58 + ((locationHash >> 5) % 30), 52, 93),
+    energy: clamp(
+      property.condition === 'new' ? 90 : property.condition === 'excellent' ? 82 : property.condition === 'good' ? 72 : 60,
+      50,
+      95,
+    ),
   }
 
   const score: InvestmentScore = {
@@ -19,19 +51,16 @@ export function generateMockAnalysis(property: Property): InvestmentAnalysis {
     overall: Math.round((baseScore.rentalYield + baseScore.airbnbPotential + baseScore.appreciation + baseScore.renovation + baseScore.legal + baseScore.liquidity) / 6)
   }
 
-  const monthlyRent = property.expectedRent || Math.round((property.askingPrice * 0.004) + (Math.random() * 200))
-  const rentalYield = ((monthlyRent * 12) / property.askingPrice) * 100
+  const monthlyRent = deterministic.rentalMonthly
+  const rentalYield = deterministic.rentalYieldPct
 
-  const airbnbDaily = Math.round(monthlyRent / 30 * 2.2 + Math.random() * 30)
-  const airbnbOccupancy = Math.min(80, Math.max(50, 65 + Math.random() * 15))
-  const airbnbMonthly = Math.round((airbnbDaily * 30 * (airbnbOccupancy / 100)))
-  const airbnbYield = ((airbnbMonthly * 12) / property.askingPrice) * 100
+  const airbnbDaily = deterministic.airbnbDailyRate
+  const airbnbOccupancy = deterministic.airbnbOccupancyPct
+  const airbnbMonthly = deterministic.airbnbMonthlyRevenue
+  const airbnbYield = deterministic.airbnbYieldPct
 
-  const renovationCost = property.condition === 'needs-renovation' 
-    ? Math.round(property.askingPrice * (0.08 + Math.random() * 0.07))
-    : Math.round(property.askingPrice * (0.015 + Math.random() * 0.02))
-  
-  const valueIncrease = Math.round(renovationCost * (1.4 + Math.random() * 0.8))
+  const renovationCost = deterministic.renovationEstimatedCost
+  const valueIncrease = deterministic.renovationValueIncrease
 
   const recommendation = score.overall >= 75 ? 'buy' : score.overall >= 60 ? 'watch' : 'avoid'
 
@@ -57,20 +86,20 @@ export function generateMockAnalysis(property: Property): InvestmentAnalysis {
     renovationROI: {
       estimatedCost: renovationCost,
       valueIncrease: valueIncrease,
-      roi: parseFloat(((valueIncrease / renovationCost - 1) * 100).toFixed(1))
+      roi: deterministic.renovationRoiPct
     },
     appreciationPotential: {
-      oneYear: parseFloat((4 + Math.random() * 4).toFixed(1)),
-      threeYear: parseFloat((12 + Math.random() * 10).toFixed(1)),
-      fiveYear: parseFloat((22 + Math.random() * 15).toFixed(1))
+      oneYear: deterministic.appreciationOneYearPct,
+      threeYear: deterministic.appreciationThreeYearPct,
+      fiveYear: deterministic.appreciationFiveYearPct,
     },
     risks: generateRisks(property, score),
     opportunities: generateOpportunities(property, score),
     assumptions: [
-      `Rental estimates based on comparable properties in ${property.district}`,
-      `Airbnb occupancy projected from ${property.city} tourism data`,
-      `Appreciation based on recent market trends in ${property.country}`,
-      `Property management fees estimated at 10-12%`
+      `Deterministic fallback estimate model used because live market API data is unavailable.`,
+      `Rent and yield estimates derived from asking price, size, city, country, bedrooms, condition, and currency.`,
+      `Airbnb assumptions are scenario estimates using city tourism proxy factors and occupancy bands.`,
+      `Renovation ROI is estimate-only and should be validated with contractor quotes.`
     ],
     missingData: [
       'Exact property tax assessment',

@@ -126,6 +126,19 @@ const insertWithOptionalCreatedBy = async <T extends Record<string, unknown>>(
   return client.from(table).insert([payload]).select('id').single()
 }
 
+const insertNote = async (payload: {
+  organization_id: string
+  opportunity_id: string
+  content: string
+}) => {
+  const client = getSupabaseClient()
+  if (!client) {
+    throw new Error('Supabase is not configured.')
+  }
+
+  return client.from('notes').insert([payload]).select('id').single()
+}
+
 const resolveOrganizationContext = async (): Promise<{ organizationId: string; userId: string }> => {
   const client = getSupabaseClient()
   if (!client) {
@@ -210,15 +223,11 @@ export const persistDealAnalyzerResult = async (
 
     const opportunityId = (opportunityData as { id: string }).id
 
-    const { data: noteData, error: noteError } = await insertWithOptionalCreatedBy(
-      'notes',
-      {
-        organization_id: organizationId,
-        opportunity_id: opportunityId,
-        content: JSON.stringify(analysis),
-      },
-      userId,
-    )
+    const { data: noteData, error: noteError } = await insertNote({
+      organization_id: organizationId,
+      opportunity_id: opportunityId,
+      content: JSON.stringify(analysis),
+    })
 
     if (noteError || !noteData) {
       throw new Error(noteError?.message || 'Failed to create analysis note snapshot.')
