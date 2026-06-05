@@ -8,19 +8,19 @@
 -- Fix:
 --   1. Backfill organization_members for existing users.
 --   2. Update is_org_member() to also accept profiles.organization_id as fallback.
---   3. Add an alternate SELECT policy on organizations via profiles.organization_id
+--   3. Add an alternate SELECT policy on organizations via profiles.id / profiles.organization_id
 --      so the auth context can load the org even if member row is still missing.
 
 -- 1. Backfill organization_members rows for existing users.
 insert into public.organization_members (organization_id, user_id, role)
-select p.organization_id, p.user_id, 'owner'
+select p.organization_id, p.id, 'owner'
 from public.profiles p
 where p.organization_id is not null
-  and p.user_id is not null
+  and p.id is not null
   and not exists (
     select 1
     from public.organization_members om
-    where om.user_id = p.user_id
+    where om.user_id = p.id
       and om.organization_id = p.organization_id
   )
 on conflict (organization_id, user_id) do nothing;
@@ -45,7 +45,7 @@ as $$
     select 1
     from public.profiles p
     where p.organization_id = org_id
-      and p.user_id = auth.uid()
+      and p.id = auth.uid()
   );
 $$;
 
@@ -60,6 +60,6 @@ create policy "organizations_select_direct"
       select 1
       from public.profiles p
       where p.organization_id = organizations.id
-        and p.user_id = auth.uid()
+        and p.id = auth.uid()
     )
   );

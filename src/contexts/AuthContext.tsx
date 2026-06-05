@@ -43,14 +43,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return
     }
 
-    // profiles.id is gen_random_uuid() and NOT the auth user id.
-    // The FK to auth.users is profiles.user_id. Always query by user_id.
+    // profiles.id is the auth user id in this schema, so query by id.
     console.info("[auth-org] resolving profile", { authUserId: userId })
 
     const { data: profileData, error: profileError } = await client
       .from("profiles")
-      .select("id,organization_id,full_name,role,user_id,email,created_at")
-      .eq("user_id", userId)
+      .select("id,organization_id,full_name,role,email,created_at")
+      .eq("id", userId)
       .maybeSingle()
 
     if (profileError) {
