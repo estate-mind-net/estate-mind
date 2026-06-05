@@ -19,7 +19,7 @@ type Slide = {
 }
 
 const analyzerSnapshot = {
-  property: 'Belgrade Waterfront, 68m2, 2BR',
+  property: 'Prime Urban Apartment, 68m², 2BR',
   score: 84,
   recommendation: 'Buy',
   annualRoi: '13.8%',
@@ -79,13 +79,12 @@ export function PresentationPage({ onExit }: PresentationPageProps) {
               AI Investment Intelligence Platform for Real Estate
             </h1>
             <p className="mx-auto max-w-3xl text-base text-foreground/75 sm:text-xl">
-              EstateMind helps investors discover, score, compare, and decide on opportunities across selected high-potential real estate markets.
-              Example markets may include Serbia, Croatia, Montenegro, and other high-growth real estate markets.
+              EstateMind helps investors discover, score, compare, and decide on opportunities across high-potential real estate markets.
             </p>
             <div className="mx-auto grid max-w-4xl gap-4 sm:grid-cols-3">
               <Card className="p-5 text-left">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Coverage</p>
-                <p className="mt-2 font-display text-2xl font-bold">7 Markets</p>
+                <p className="mt-2 font-display text-2xl font-bold">Multi-Market</p>
               </Card>
               <Card className="p-5 text-left">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Analysis Speed</p>

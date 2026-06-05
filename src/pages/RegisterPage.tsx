@@ -74,7 +74,7 @@ export function RegisterPage() {
             autoComplete="name"
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
-            placeholder="Ana Markovic"
+            placeholder="Sara Morgan"
             className="border-slate-700 bg-slate-900/60 text-slate-100 placeholder:text-slate-400"
           />
         </div>

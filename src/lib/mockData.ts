@@ -21,7 +21,7 @@ export const mockProperties: Property[] = [
   {
     id: '2',
     title: 'Coastal Villa with Sea View',
-    country: 'Greece',
+    country: 'Italy',
     city: 'Athens',
     district: 'Vouliagmeni',
     propertyType: 'villa',
@@ -57,7 +57,7 @@ export const mockProperties: Property[] = [
   {
     id: '4',
     title: 'Luxury Penthouse Downtown',
-    country: 'Croatia',
+    country: 'France',
     city: 'Dubrovnik',
     district: 'Old Town',
     propertyType: 'apartment',

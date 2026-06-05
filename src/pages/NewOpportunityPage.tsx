@@ -44,19 +44,19 @@ const INITIAL_FORM_DATA: NewOpportunityFormData = {
 }
 
 const DEMO_FORM_DATA: NewOpportunityFormData = {
-  title: 'Novi Sad Grbavica 2BR Apartment',
-  country: 'Serbia',
-  city: 'Novi Sad',
-  district: 'Grbavica',
+  title: 'Central Lisbon 2BR Apartment',
+  country: 'Portugal',
+  city: 'Lisbon',
+  district: 'Alcantara',
   propertyType: 'apartment',
   askingPrice: '128000',
   currency: 'EUR',
   sizeSqm: '56',
   bedrooms: '2',
   condition: 'excellent',
-  listingUrl: 'https://example.com/novi-sad-grbavica-apartment',
+  listingUrl: 'https://example.com/central-lisbon-2br-apartment',
   description:
-    'Renovated two-bedroom apartment in Grbavica, close to schools, public transport, cafes, and the city center. Suitable for long-term rental or owner occupation.',
+    'Renovated two-bedroom apartment in a central district, close to schools, public transport, cafes, and major employment zones. Suitable for long-term rental or owner occupation.',
 }
 
 const toPayload = (formData: NewOpportunityFormData): CreateOpportunityInput => ({

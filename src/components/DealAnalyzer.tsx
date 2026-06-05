@@ -33,9 +33,9 @@ type DealAnalyzerFormData = {
 
 const DEMO_FORM_DATA: DealAnalyzerFormData = {
   title: '2-bedroom apartment near city center',
-  country: 'Serbia',
-  city: 'Novi Sad',
-  district: 'Grbavica',
+  country: 'Portugal',
+  city: 'Lisbon',
+  district: 'Alcantara',
   propertyType: 'apartment',
   askingPrice: '145000',
   currency: 'EUR',
@@ -43,7 +43,7 @@ const DEMO_FORM_DATA: DealAnalyzerFormData = {
   bedrooms: '2',
   condition: 'good',
   listingUrl: '',
-  description: 'A 2-bedroom apartment in Grbavica, Novi Sad, close to the city center, university area, public transport, cafes, and daily amenities. Suitable for long-term rental. Light renovation may improve rentability and resale appeal.',
+  description: 'A 2-bedroom apartment close to the city center, transit, cafes, and major business districts. Suitable for long-term rental. Light renovation may improve rentability and resale appeal.',
   expectedRent: '750',
   airbnbAssumptions: 'Potential short-term rental demand from business travelers, university visitors, and weekend tourists, but no verified occupancy or ADR data provided.',
   renovationNotes: 'Light renovation may include painting, bathroom refresh, basic furniture upgrade, and lighting improvement. No contractor quote provided.',

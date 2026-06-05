@@ -83,8 +83,8 @@ export function estimateClosingCosts(purchasePrice: number, country: string = 'E
   const rates: Record<string, number> = {
     Portugal: 0.065,
     Spain: 0.10,
-    Greece: 0.08,
-    Croatia: 0.05,
+    Italy: 0.08,
+    France: 0.05,
     default: 0.075,
   }
 
