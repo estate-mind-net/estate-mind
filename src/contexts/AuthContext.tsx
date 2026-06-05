@@ -48,7 +48,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const { data: profileData, error: profileError } = await client
       .from("profiles")
-      .select("id,organization_id,full_name,role,email,created_at")
+      .select("id,organization_id,full_name,role")
       .eq("id", userId)
       .maybeSingle()
 
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (resolvedOrgId) {
       const { data: organizationData, error: organizationError } = await client
         .from("organizations")
-        .select("id,name,type,subscription_tier,created_at")
+        .select("id,name,type,created_at")
         .eq("id", resolvedOrgId)
         .maybeSingle()
 
