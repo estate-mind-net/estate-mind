@@ -25,7 +25,7 @@ const slides: SlideData[] = [
   {
     id: 1,
     title: 'EstateMind Founding Partner Program',
-    subtitle: 'Help build the Bloomberg Terminal for Balkan Real Estate',
+    subtitle: 'Help build the Bloomberg Terminal for Real Estate Investment Intelligence',
     kind: 'hero',
   },
   {
@@ -37,7 +37,7 @@ const slides: SlideData[] = [
   {
     id: 3,
     title: 'EstateMind Solution',
-    subtitle: 'AI-powered investment intelligence for Balkan real estate.',
+    subtitle: 'AI-powered investment intelligence for real estate opportunities.',
     kind: 'solution',
   },
   {
@@ -125,7 +125,7 @@ function renderSlideContent(slide: SlideData) {
           EstateMind Founding Partner Program
         </h1>
         <p className="mx-auto mt-5 max-w-4xl text-lg text-white/70 sm:text-2xl">
-          Help build the Bloomberg Terminal for Balkan Real Estate
+          Help build the Bloomberg Terminal for Real Estate Investment Intelligence
         </p>
       </div>
     )
@@ -197,7 +197,7 @@ function renderSlideContent(slide: SlideData) {
           <div className="rounded-xl border border-white/10 bg-white/5 p-6">
             <p className="text-xs uppercase tracking-wide text-cyan-200">Tagline</p>
             <p className="mt-4 text-2xl font-semibold leading-snug text-white">
-              AI-powered investment intelligence for Balkan real estate.
+              AI-powered investment intelligence for real estate opportunities.
             </p>
           </div>
         </div>
@@ -335,7 +335,7 @@ function renderSlideContent(slide: SlideData) {
           <p className="mt-2 text-5xl font-bold text-white">EUR 141,732/year</p>
         </div>
         <p className="mt-5 text-lg text-white/75">
-          Build recurring income today while helping create the leading AI investment intelligence platform for Balkan real estate.
+          Build recurring income today while helping create a leading AI investment intelligence platform for real estate.
         </p>
       </div>
     )
@@ -370,7 +370,7 @@ function renderSlideContent(slide: SlideData) {
     <div className="text-center">
       <SectionTitle title={slide.title} subtitle={slide.subtitle} />
       <div className="mx-auto max-w-4xl rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-8">
-        <p className="text-2xl text-white/90">Help shape the future of real estate investment intelligence in the Balkans.</p>
+        <p className="text-2xl text-white/90">Help shape the future of scalable real estate investment intelligence across global markets.</p>
         <button
           type="button"
           className="mt-8 inline-flex items-center justify-center rounded-md bg-cyan-300 px-6 py-3 text-base font-semibold text-slate-950 transition hover:bg-cyan-200"

@@ -68,7 +68,7 @@ export function PresentationPage({ onExit }: PresentationPageProps) {
       {
         id: 1,
         title: 'Vision',
-        subtitle: 'AI Investment Intelligence Platform for Balkan Real Estate',
+        subtitle: 'AI Investment Intelligence Platform for Real Estate',
         content: (
           <div className="space-y-8 text-center">
             <Badge className="mx-auto border-accent/30 bg-accent/15 text-accent">
@@ -76,10 +76,11 @@ export function PresentationPage({ onExit }: PresentationPageProps) {
               Product Vision
             </Badge>
             <h1 className="font-display text-4xl font-bold tracking-tight sm:text-6xl">
-              AI Investment Intelligence Platform for Balkan Real Estate
+              AI Investment Intelligence Platform for Real Estate
             </h1>
             <p className="mx-auto max-w-3xl text-base text-foreground/75 sm:text-xl">
-              EstateMind helps investors discover, score, compare, and decide on opportunities across Serbia, Croatia, Montenegro, Bosnia and Herzegovina, North Macedonia, Albania, and Greece.
+              EstateMind helps investors discover, score, compare, and decide on opportunities across selected high-potential real estate markets.
+              Example markets may include Serbia, Croatia, Montenegro, and other high-growth real estate markets.
             </p>
             <div className="mx-auto grid max-w-4xl gap-4 sm:grid-cols-3">
               <Card className="p-5 text-left">
@@ -298,7 +299,7 @@ export function PresentationPage({ onExit }: PresentationPageProps) {
         subtitle: 'Product expansion path from analysis to network effects',
         content: (
           <div className="space-y-8">
-            <h2 className="font-display text-3xl font-bold sm:text-5xl">Execution roadmap toward a regional intelligence network.</h2>
+            <h2 className="font-display text-3xl font-bold sm:text-5xl">Execution roadmap toward a scalable intelligence network.</h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {roadmapItems.map((item, index) => (
                 <Card key={item} className="p-5">
@@ -311,7 +312,7 @@ export function PresentationPage({ onExit }: PresentationPageProps) {
               <div className="flex items-start gap-3">
                 <Wallet className="h-5 w-5 text-success" weight="duotone" />
                 <p className="text-sm text-foreground/80 sm:text-base">
-                  End state: EstateMind becomes the operating system for real estate investors in the Balkans.
+                  End state: EstateMind becomes the operating system for real estate investors across selected high-potential markets.
                 </p>
               </div>
             </Card>
