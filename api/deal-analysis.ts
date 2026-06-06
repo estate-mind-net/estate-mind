@@ -2,6 +2,9 @@
 // Local testing: use `vercel dev` (not `vite` alone).
 // Frontend calls: fetch('/api/deal-analysis', { method: 'POST', body: JSON.stringify({ property }) })
 
+import { collectMarketData, getMarketDataProvidersFromConfig } from '../src/services/marketData'
+import type { MarketDataBundle, MarketDataPropertyContext } from '../src/services/marketData'
+
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const OPENAI_TIMEOUT_MS = 20_000
 
@@ -183,11 +186,40 @@ const isPropertyPayload = (value: unknown): value is Record<string, unknown> => 
   )
 }
 
+const toMarketDataContext = (property: Record<string, unknown>): MarketDataPropertyContext => ({
+  propertyId: String(property.id ?? `property-${Date.now()}`),
+  country: asNonEmptyString(property.country, ''),
+  city: asNonEmptyString(property.city, ''),
+  district: asNonEmptyString(property.district, ''),
+  propertyType: asNonEmptyString(property.propertyType, ''),
+  askingPrice: Math.max(asNumber(property.askingPrice, 0), 0),
+  currency: asNonEmptyString(property.currency, 'EUR'),
+  sizeSqm: Math.max(asNumber(property.sizeSqm, 0), 0),
+  bedrooms: Math.max(Math.round(asNumber(property.bedrooms, 0)), 0),
+  condition: asNonEmptyString(property.condition, 'good'),
+  expectedRent: Number.isFinite(Number(property.expectedRent)) ? asNumber(property.expectedRent, 0) : undefined,
+})
+
+const resolveMarketData = async (property: Record<string, unknown>): Promise<MarketDataBundle> => {
+  try {
+    const providers = getMarketDataProvidersFromConfig()
+    return await collectMarketData(toMarketDataContext(property), providers)
+  } catch (error) {
+    console.warn('[deal-analysis] market data resolution failed, continuing with deterministic fallback', error)
+    return {
+      providerMode: 'disabled',
+      propertyPrice: null,
+      rental: null,
+      airbnb: null,
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // normalizeAnalysis — identical contract to vite.config.ts version
 // ---------------------------------------------------------------------------
 
-const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
+const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, marketData: MarketDataBundle | null = null) => {
   const payload = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const score = payload.score && typeof payload.score === 'object'
     ? (payload.score as Record<string, unknown>)
@@ -200,6 +232,10 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
 
   const askingPrice = asNumber(property.askingPrice, 1)
   const deterministic = buildDeterministicFallbackMetrics(property)
+  const marketRental = marketData?.rental
+  const marketAirbnb = marketData?.airbnb
+  const marketPrice = marketData?.propertyPrice
+  const marketDataAvailable = Boolean(marketRental || marketAirbnb || marketPrice)
   const expectedRent = asNumber(property.expectedRent, deterministic.rentalMonthly)
   const hasExpectedRentInput = Number.isFinite(Number(property.expectedRent))
 
@@ -209,6 +245,14 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
   const appreciationPotential = asMetricObject(payload.appreciationPotential)
 
   const factsProvided = asStringArray(payload.factsProvided, ['Property details provided by the user were used as baseline facts.'])
+  const marketFacts = marketDataAvailable
+    ? [
+        `Market data provider mode: ${marketData?.providerMode ?? 'unknown'}.`,
+        marketPrice ? `Provider property valuation: ${Math.round(marketPrice.estimatedValue)} (${marketPrice.source}, ${marketPrice.confidence} confidence).` : '',
+        marketRental ? `Provider long-term rent estimate: ${Math.round(marketRental.monthlyRent)} monthly (${marketRental.source}, ${marketRental.confidence} confidence).` : '',
+        marketAirbnb ? `Provider short-term estimate: ${Math.round(marketAirbnb.dailyRate)} ADR at ${Math.round(marketAirbnb.occupancyPct)}% occupancy (${marketAirbnb.source}, ${marketAirbnb.confidence} confidence).` : '',
+      ].filter(Boolean)
+    : []
   const assumptionsUsed = asStringArray(
     payload.assumptionsUsed ?? payload.assumptions,
     ['Market and cost assumptions are conservative and should be validated with local comps.'],
@@ -249,16 +293,19 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
 
   const rentalPctFromMetric = asLooseNumber(rentalYieldValue, NaN)
   const rentalPctFromLegacy = asNumber(rentalYieldEstimate.percentage, NaN)
+  const rentalPctFromMarket = asNumber(marketRental?.yieldPct, NaN)
   const rentalPctResolved = Number.isFinite(rentalPctFromMetric)
     ? rentalPctFromMetric
-    : Number.isFinite(rentalPctFromLegacy) ? rentalPctFromLegacy : deterministic.rentalYieldPct
+    : Number.isFinite(rentalPctFromLegacy)
+      ? rentalPctFromLegacy
+      : Number.isFinite(rentalPctFromMarket) ? rentalPctFromMarket : deterministic.rentalYieldPct
 
   const rentalMonthly = asNumber(
     rentalYieldEstimate.monthly,
-    rentalPctResolved > 0 ? (askingPrice * (rentalPctResolved / 100)) / 12 : expectedRent,
+    asNumber(marketRental?.monthlyRent, rentalPctResolved > 0 ? (askingPrice * (rentalPctResolved / 100)) / 12 : expectedRent),
   )
   const rentalMonthlyResolved = rentalMonthly > 0 ? rentalMonthly : deterministic.rentalMonthly
-  const rentalAnnual = asNumber(rentalYieldEstimate.annual, rentalMonthlyResolved * 12)
+  const rentalAnnual = asNumber(rentalYieldEstimate.annual, asNumber(marketRental?.annualRent, rentalMonthlyResolved * 12))
   const rentalAnnualResolved = rentalAnnual > 0 ? rentalAnnual : deterministic.rentalAnnual
   const rentalPctRaw = Number.isFinite(rentalPctResolved) && rentalPctResolved > 0
     ? rentalPctResolved
@@ -267,16 +314,19 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
 
   const airbnbPctFromMetric = asLooseNumber(airbnbYieldValue, NaN)
   const airbnbPctFromLegacy = asNumber(airbnbPotential.percentage, NaN)
+  const airbnbPctFromMarket = asNumber(marketAirbnb?.yieldPct, NaN)
   const airbnbPctResolved = Number.isFinite(airbnbPctFromMetric)
     ? airbnbPctFromMetric
-    : Number.isFinite(airbnbPctFromLegacy) ? airbnbPctFromLegacy : deterministic.airbnbYieldPct
+    : Number.isFinite(airbnbPctFromLegacy)
+      ? airbnbPctFromLegacy
+      : Number.isFinite(airbnbPctFromMarket) ? airbnbPctFromMarket : deterministic.airbnbYieldPct
 
   const airbnbMonthly = asNumber(
     airbnbPotential.monthlyRevenue,
-    airbnbPctResolved > 0 ? (askingPrice * (airbnbPctResolved / 100)) / 12 : rentalMonthlyResolved * 1.2,
+    asNumber(marketAirbnb?.monthlyRevenue, airbnbPctResolved > 0 ? (askingPrice * (airbnbPctResolved / 100)) / 12 : rentalMonthlyResolved * 1.2),
   )
   const airbnbMonthlyResolved = airbnbMonthly > 0 ? airbnbMonthly : deterministic.airbnbMonthly
-  const airbnbAnnual = asNumber(airbnbPotential.annualRevenue, airbnbMonthlyResolved * 12)
+  const airbnbAnnual = asNumber(airbnbPotential.annualRevenue, asNumber(marketAirbnb?.annualRevenue, airbnbMonthlyResolved * 12))
   const airbnbAnnualResolved = airbnbAnnual > 0 ? airbnbAnnual : deterministic.airbnbAnnual
   const airbnbPctRaw = Number.isFinite(airbnbPctResolved) && airbnbPctResolved > 0
     ? airbnbPctResolved
@@ -292,8 +342,14 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
     ? renovationRoiRaw
     : deterministic.renovationRoiPct
 
-  const usedDeterministicRentalFallback = !Number.isFinite(rentalPctFromMetric) && !Number.isFinite(rentalPctFromLegacy)
-  const usedDeterministicAirbnbFallback = !Number.isFinite(airbnbPctFromMetric) && !Number.isFinite(airbnbPctFromLegacy)
+  const usedDeterministicRentalFallback =
+    !Number.isFinite(rentalPctFromMetric) &&
+    !Number.isFinite(rentalPctFromLegacy) &&
+    !Number.isFinite(rentalPctFromMarket)
+  const usedDeterministicAirbnbFallback =
+    !Number.isFinite(airbnbPctFromMetric) &&
+    !Number.isFinite(airbnbPctFromLegacy) &&
+    !Number.isFinite(airbnbPctFromMarket)
   const usedDeterministicRenovationFallback =
     Number(renovationROI.estimatedCost) <= 0 ||
     Number(renovationROI.valueIncrease) <= 0 ||
@@ -307,10 +363,16 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
 
   const fallbackDisclosure = 'Deterministic fallback estimate model applied because live market comparable API data is unavailable.'
   const deterministicEstimateNote = 'Deterministic estimate model applied using asking price, size, city, country, bedrooms, condition, and currency because live market comparable API data is unavailable.'
+  const marketDataNote = marketDataAvailable
+    ? `Provider-supplied market data (${marketData?.providerMode ?? 'unknown'}) was used when available before deterministic fallback.`
+    : ''
 
-  const assumptionsFinal = usedDeterministicEstimate && !assumptionsUsed.some((item) => item.toLowerCase().includes('deterministic estimate model'))
-    ? [deterministicEstimateNote, ...assumptionsUsed]
+  const assumptionsWithMarketData = marketDataNote && !assumptionsUsed.some((item) => item.toLowerCase().includes('provider-supplied market data'))
+    ? [marketDataNote, ...assumptionsUsed]
     : assumptionsUsed
+  const assumptionsFinal = usedDeterministicEstimate && !assumptionsWithMarketData.some((item) => item.toLowerCase().includes('deterministic estimate model'))
+    ? [deterministicEstimateNote, ...assumptionsWithMarketData]
+    : assumptionsWithMarketData
   const estimatesFinal = usedDeterministicEstimate && !estimates.some((item) => item.toLowerCase().includes('deterministic'))
     ? ['Rent, ROI, rental yield, and Airbnb yield are deterministic estimates, not guaranteed outcomes.', ...estimates]
     : estimates
@@ -396,7 +458,7 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
     opportunities: keyUpsides,
     assumptions: assumptionsFinal,
     missingData: missingInformationFinal,
-    factsProvided,
+    factsProvided: [...marketFacts, ...factsProvided],
     assumptionsUsed: assumptionsFinal,
     estimates: estimatesFinal,
     confidenceLevel,
@@ -408,7 +470,7 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
     scoringRules,
     fallbackDisclosure: usedDeterministicEstimate ? fallbackDisclosure : null,
     investorAnalysis: {
-      factsProvided,
+      factsProvided: [...marketFacts, ...factsProvided],
       assumptionsUsed: assumptionsFinal,
       estimates: estimatesFinal,
       confidenceLevel,
@@ -460,7 +522,7 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>) => {
 // OpenAI prompt builder
 // ---------------------------------------------------------------------------
 
-const buildPrompt = (property: Record<string, unknown>): string =>
+const buildPrompt = (property: Record<string, unknown>, marketData: MarketDataBundle | null): string =>
   [
     'You are an investor-grade, conservative real estate investment analyst.',
     'Return valid JSON only. No markdown.',
@@ -477,6 +539,9 @@ const buildPrompt = (property: Record<string, unknown>): string =>
     '',
     'Property JSON:',
     JSON.stringify(property),
+    '',
+    'Market data JSON (provider-supplied, may be null):',
+    JSON.stringify(marketData),
     '',
     'Output schema:',
     JSON.stringify({
@@ -552,10 +617,19 @@ export default async function handler(request: Request): Promise<Response> {
     return sendJson(400, { ok: false, error: 'Invalid property payload.' })
   }
 
+  const marketData = await resolveMarketData(property)
+
   if (!apiKey) {
     console.log('[AI] No API key — returning deterministic fallback')
-    const fallbackAnalysis = normalizeAnalysis({}, property)
-    return sendJson(200, { ok: true, analysis: fallbackAnalysis })
+    const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
+    return sendJson(200, {
+      ok: true,
+      analysis: fallbackAnalysis,
+      meta: {
+        marketDataProviderMode: marketData.providerMode,
+        marketDataAvailable: Boolean(marketData.propertyPrice || marketData.rental || marketData.airbnb),
+      },
+    })
   }
 
   let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -578,7 +652,7 @@ export default async function handler(request: Request): Promise<Response> {
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: 'You generate conservative real-estate investment analysis as strict JSON.' },
-          { role: 'user', content: buildPrompt(property) },
+          { role: 'user', content: buildPrompt(property, marketData) },
         ],
       }),
       signal: controller.signal,
@@ -591,7 +665,7 @@ export default async function handler(request: Request): Promise<Response> {
         statusText: openAIResponse.statusText,
         providerMessage: providerBody.slice(0, 500),
       })
-      const fallbackAnalysis = normalizeAnalysis({}, property)
+      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
       return sendJson(200, {
         ok: true,
         analysis: fallbackAnalysis,
@@ -607,7 +681,7 @@ export default async function handler(request: Request): Promise<Response> {
       openAIPayload = JSON.parse(rawResponseText) as { choices?: Array<{ message?: { content?: string } }> }
     } catch (parseError) {
       console.error('[deal-analysis] provider JSON parse failed', parseError)
-      const fallbackAnalysis = normalizeAnalysis({}, property)
+      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
       return sendJson(200, {
         ok: true,
         analysis: fallbackAnalysis,
@@ -619,7 +693,7 @@ export default async function handler(request: Request): Promise<Response> {
     const content = openAIPayload.choices?.[0]?.message?.content
     if (!content) {
       console.error('OpenAI response did not contain content')
-      const fallbackAnalysis = normalizeAnalysis({}, property)
+      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
       return sendJson(200, {
         ok: true,
         analysis: fallbackAnalysis,
@@ -632,7 +706,7 @@ export default async function handler(request: Request): Promise<Response> {
       structured = JSON.parse(content)
     } catch (contentParseError) {
       console.error('[deal-analysis] content JSON parse failed', contentParseError)
-      const fallbackAnalysis = normalizeAnalysis({}, property)
+      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
       return sendJson(200, {
         ok: true,
         analysis: fallbackAnalysis,
@@ -651,7 +725,7 @@ export default async function handler(request: Request): Promise<Response> {
       })
     }
 
-    const analysis = normalizeAnalysis(structured, property)
+    const analysis = normalizeAnalysis(structured, property, marketData)
     if (debug) {
       console.debug('[deal-analysis] normalized score fields', {
         score: analysis.score,
@@ -666,7 +740,7 @@ export default async function handler(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       console.error('[deal-analysis] OpenAI timed out after 20s; returning deterministic fallback')
-      const fallbackAnalysis = normalizeAnalysis({}, property)
+      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
       return sendJson(200, {
         ok: true,
         analysis: fallbackAnalysis,
@@ -675,7 +749,7 @@ export default async function handler(request: Request): Promise<Response> {
     }
 
     console.error('[AI ANALYSIS FATAL]', error)
-    const fallbackAnalysis = normalizeAnalysis({}, property)
+    const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
     return sendJson(200, {
       ok: true,
       analysis: fallbackAnalysis,

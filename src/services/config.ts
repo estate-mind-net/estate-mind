@@ -23,6 +23,9 @@ export const API_CONFIG = {
     apiBaseUrl: import.meta.env.VITE_API_BASE_URL || '',
     environment: import.meta.env.MODE || 'development',
   },
+  marketData: {
+    provider: import.meta.env.VITE_MARKET_DATA_PROVIDER || 'mock',
+  },
 } as const
 
 export const isProduction = () => API_CONFIG.app.environment === 'production'

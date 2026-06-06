@@ -142,7 +142,10 @@ Focus on current trends, demand, and investment outlook.
   }
 
   private buildAnalysisPrompt(request: AIAnalysisRequest): string {
-    const { property } = request
+    const { property, context } = request
+    const marketDataSection = context?.marketData
+      ? `- Market Data Context: ${JSON.stringify(context.marketData)}`
+      : '- Market Data Context: unavailable (fallback estimates may be used)'
 
     return `
 You are an expert real estate investment analyst. Analyze the following property and provide a comprehensive investment analysis.
@@ -156,6 +159,7 @@ Property Details:
 - Condition: ${property.condition || 'Unknown'}
 ${property.description ? `- Description: ${property.description}` : ''}
 ${property.expectedRent ? `- Expected Monthly Rent: ${property.expectedRent} ${property.currency}` : ''}
+${marketDataSection}
 
 Provide a detailed investment analysis with:
 1. Overall investment score (0-100)
