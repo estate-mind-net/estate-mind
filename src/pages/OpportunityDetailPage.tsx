@@ -33,6 +33,14 @@ const formatDate = (value: string) =>
     minute: '2-digit',
   }).format(new Date(value))
 
+const toRecommendationLabel = (value: 'buy' | 'watch' | 'avoid') => value.toUpperCase()
+
+const takeShortSentence = (value: string | undefined) => {
+  if (!value) return 'Not available.'
+  const sentence = value.split(/[.!?]/)[0]?.trim() ?? value
+  return sentence.length > 120 ? `${sentence.slice(0, 117)}...` : sentence
+}
+
 function LoadingState() {
   return (
     <div className="space-y-6">
@@ -103,6 +111,26 @@ export function OpportunityDetailPage() {
     return item.notes.find((note) => Boolean(note.parsedAnalysis))?.parsedAnalysis ?? item.analysis
   }, [item])
 
+  const confidenceLevel = useMemo(() => {
+    if (!latestAnalysis) {
+      return null
+    }
+
+    const raw = (latestAnalysis as Record<string, unknown>).confidenceLevel
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw
+    }
+
+    const numeric = (latestAnalysis as Record<string, unknown>).confidence
+    if (typeof numeric === 'number') {
+      if (numeric >= 85) return 'High'
+      if (numeric >= 65) return 'Medium'
+      return 'Low'
+    }
+
+    return null
+  }, [latestAnalysis])
+
   if (isLoading) {
     return <LoadingState />
   }
@@ -142,7 +170,7 @@ export function OpportunityDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Badge variant="outline">{statusLabels[item.stage] ?? item.stage}</Badge>
           <Badge variant="secondary">{item.priority}</Badge>
         </div>
@@ -181,17 +209,35 @@ export function OpportunityDetailPage() {
               <div className="mt-5 space-y-4">
                 <div className="flex items-center justify-between gap-4">
                   <Badge variant="outline" className="border-accent/40 text-accent">
-                    {latestAnalysis.recommendation.toUpperCase()}
+                    {toRecommendationLabel(latestAnalysis.recommendation)}
                   </Badge>
                   <ScoreGauge score={latestAnalysis.score.overall} size="sm" showLabel={false} />
                 </div>
 
-                <InfoBlock label="AI Score" value={`${latestAnalysis.score.overall}/100`} />
-                <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate.monthly)} />
-                <InfoBlock label="ROI Estimate" value={`${(latestAnalysis.rentalYieldEstimate.percentage + latestAnalysis.appreciationPotential.oneYear).toFixed(2)}%`} />
-                <InfoBlock label="Rental Yield" value={`${latestAnalysis.rentalYieldEstimate.percentage}%`} />
-                <InfoBlock label="Airbnb Yield" value={`${latestAnalysis.airbnbPotential.percentage}%`} />
-                <InfoBlock label="Recommendation" value={latestAnalysis.recommendation.toUpperCase()} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <InfoBlock label="Recommendation" value={toRecommendationLabel(latestAnalysis.recommendation)} />
+                  <InfoBlock label="Investment Score" value={`${latestAnalysis.score.overall}/100`} />
+                  <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate.monthly)} />
+                  <InfoBlock label="Rental Yield" value={`${latestAnalysis.rentalYieldEstimate.percentage}%`} />
+                  <InfoBlock label="ROI Estimate" value={`${(latestAnalysis.rentalYieldEstimate.percentage + latestAnalysis.appreciationPotential.oneYear).toFixed(2)}%`} />
+                  {confidenceLevel ? <InfoBlock label="Confidence Level" value={confidenceLevel} /> : null}
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                  <p>
+                    <span className="font-semibold">Top Strength:</span> {takeShortSentence(latestAnalysis.opportunities[0])}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Top Risk:</span> {takeShortSentence(latestAnalysis.risks[0])}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Button className="w-full" onClick={() => navigate(`/opportunities/${item.id}/report`)}>
+                    View Full Investment Report
+                  </Button>
+                  <p className="text-xs text-muted-foreground">Full Investment Reports are part of the Pro workflow.</p>
+                </div>
               </div>
             ) : (
               <p className="mt-5 text-sm text-muted-foreground">AI analysis is not available for this opportunity yet.</p>

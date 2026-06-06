@@ -1,253 +1,360 @@
-import { useEffect } from 'react'
-import { ScoreGauge } from './ScoreGauge'
-import { Card } from '@/components/ui/card'
+import { ArrowLeft, Buildings, ChartBar, MapPin, Printer, ShieldWarning, Sparkle, TrendUp, WarningCircle } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Progress } from '@/components/ui/progress'
-import {  ArrowLeft, TrendUp, TrendDown, Warning, CheckCircle, X } from '@phosphor-icons/react'
+import { Card } from '@/components/ui/card'
+import { ScoreGauge } from './ScoreGauge'
 import type { InvestmentAnalysis } from '@/lib/types'
 import { mockAnalyses } from '@/lib/mockData'
+import { cn } from '@/lib/utils'
 
 interface InvestmentReportProps {
   analysis?: InvestmentAnalysis
-  onBack: () => void
+  onBack?: () => void
+  title?: string
+  location?: string
+  askingPrice?: number | null
+  currency?: string
+  className?: string
+  showHeaderActions?: boolean
 }
 
-export function InvestmentReport({ analysis, onBack }: InvestmentReportProps) {
-  const report = analysis || mockAnalyses[0]
-  const { property, score, recommendation, executiveSummary, rentalYieldEstimate, airbnbPotential, renovationROI, appreciationPotential, risks, opportunities, assumptions, missingData } = report
+const formatCurrency = (value: number, currency: string) => {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 0,
+    }).format(value)
+  } catch {
+    return `${currency} ${Math.round(value).toLocaleString()}`
+  }
+}
 
-  useEffect(() => {
-    if (!import.meta.env.DEV) {
-      return
-    }
+const toTitleCase = (value: string) =>
+  value
+    .split('-')
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ')
 
-    console.debug('[deal-analysis-ui] final report score fields', {
-      usingProvidedAnalysis: Boolean(analysis),
-      usingMockFallback: !analysis,
-      score,
-      overallScore: (report as InvestmentAnalysis & Record<string, unknown>).overallScore,
-      investmentScore: (report as InvestmentAnalysis & Record<string, unknown>).investmentScore,
-      metrics: (report as InvestmentAnalysis & Record<string, unknown>).metrics,
-      confidence: (report as InvestmentAnalysis & Record<string, unknown>).confidence,
-      confidenceLevel: (report as InvestmentAnalysis & Record<string, unknown>).confidenceLevel,
-      renderedOverallScore: score?.overall,
-    })
-  }, [analysis, report, score])
+const getRecommendationLabel = (recommendation: InvestmentAnalysis['recommendation']) => {
+  if (recommendation === 'buy') return 'BUY'
+  if (recommendation === 'watch') return 'WATCH'
+  return 'AVOID'
+}
 
-  const recommendationConfig = {
-    buy: { label: 'Strong Buy', color: 'text-success', bgColor: 'bg-success/10', borderColor: 'border-success' },
-    watch: { label: 'Watch', color: 'text-warning', bgColor: 'bg-warning/10', borderColor: 'border-warning' },
-    avoid: { label: 'Avoid', color: 'text-destructive', bgColor: 'bg-destructive/10', borderColor: 'border-destructive' }
+const getRiskLevel = (analysis: InvestmentAnalysis): 'Low' | 'Medium' | 'High' => {
+  if (analysis.recommendation === 'avoid' || analysis.score.overall < 50) {
+    return 'High'
   }
 
-  const config = recommendationConfig[recommendation]
+  if (analysis.recommendation === 'watch' || analysis.score.overall < 70) {
+    return 'Medium'
+  }
+
+  return 'Low'
+}
+
+export function InvestmentReport({ analysis, onBack, title, location, askingPrice, currency, className, showHeaderActions = true }: InvestmentReportProps) {
+  const report = analysis || mockAnalyses[0]
+  const {
+    property,
+    score,
+    recommendation,
+    executiveSummary,
+    rentalYieldEstimate,
+    airbnbPotential,
+    appreciationPotential,
+    risks,
+    opportunities,
+  } = report
+
+  const reportCurrency = currency ?? property.currency
+  const reportTitle = title ?? property.title
+  const reportLocation = location ?? `${property.city}, ${property.country}`
+  const reportAskingPrice = askingPrice ?? property.askingPrice
+  const recommendationLabel = getRecommendationLabel(recommendation)
+
+  const annualRent = rentalYieldEstimate.annual
+  const roiEstimate = Number((rentalYieldEstimate.percentage + appreciationPotential.oneYear).toFixed(2))
+  const estimatedExpenses = Math.round(rentalYieldEstimate.monthly * 0.35)
+  const cashflowEstimate = rentalYieldEstimate.monthly - estimatedExpenses
+
+  const strengths = [
+    score.rentalYield >= 70 ? 'Strong long-term rental performance' : null,
+    score.airbnbPotential >= 70 ? 'Competitive short-term rental profile' : null,
+    score.appreciation >= 70 ? 'Solid medium-term appreciation outlook' : null,
+    score.liquidity >= 70 ? 'Healthy exit and liquidity profile' : null,
+  ].filter(Boolean) as string[]
+
+  const demandOutlook =
+    rentalYieldEstimate.percentage >= 6 || airbnbPotential.occupancy >= 68
+      ? 'High demand driven by strong rental and occupancy assumptions.'
+      : rentalYieldEstimate.percentage >= 4.5
+        ? 'Balanced demand with moderate upside potential.'
+        : 'Demand may be price-sensitive without clear rental momentum.'
+
+  const supplyOutlook =
+    appreciationPotential.oneYear >= 6
+      ? 'Supply pressure appears manageable relative to expected demand growth.'
+      : appreciationPotential.oneYear >= 3
+        ? 'Supply and demand are likely in equilibrium in the near term.'
+        : 'Supply pressure may limit near-term pricing power.'
+
+  const riskLevel = getRiskLevel(report)
+  const topReasonsToInvest = opportunities.slice(0, 3)
+  const keyStrengths = (strengths.length > 0 ? strengths : opportunities).slice(0, 3)
+  const keyRisks = risks.slice(0, 3)
+
+  const recommendedAction =
+    recommendation === 'buy'
+      ? 'Proceed to due diligence, validate legal documentation, and prepare offer terms.'
+      : recommendation === 'watch'
+        ? 'Monitor pricing and micro-market indicators while collecting missing legal and tenancy data.'
+        : 'Avoid commitment until risk drivers are mitigated and return assumptions materially improve.'
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" onClick={onBack} size="icon">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="font-display text-4xl font-bold tracking-tight">Investment Analysis</h1>
-          <p className="mt-2 text-foreground/70">{property.title}</p>
+    <section className={cn('mx-auto max-w-6xl space-y-6 print:max-w-none print:space-y-4 print:text-black', className)}>
+      <header className="rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-accent/10 p-6 print:border-slate-300 print:bg-white">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
+            <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">AI Investment Report</h1>
+            <p className="text-base font-semibold text-foreground/80">{reportTitle}</p>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <MapPin className="h-4 w-4" />
+              {reportLocation}
+            </p>
+          </div>
+
+          {showHeaderActions ? (
+            <div className="flex gap-2 print:hidden">
+              {onBack ? (
+                <Button variant="outline" onClick={onBack}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back
+                </Button>
+              ) : null}
+              <Button variant="secondary" onClick={() => window.print()}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print Report
+              </Button>
+            </div>
+          ) : null}
         </div>
-      </div>
 
-      <Card className={`border-2 ${config.borderColor} ${config.bgColor} p-8`}>
-        <div className="grid gap-8 lg:grid-cols-3">
-          <div className="flex flex-col items-center justify-center text-center lg:border-r lg:border-border">
-            <ScoreGauge score={score.overall} size="lg" showLabel={false} />
-            <p className="mt-4 font-display text-2xl font-bold">Overall Score</p>
-            <p className="mt-1 text-sm text-muted-foreground">Investment Quality</p>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl border border-border/60 bg-background/70 p-4 print:border-slate-300 print:bg-white">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Asking Price</p>
+            <p className="mt-2 text-xl font-semibold">
+              {formatCurrency(reportAskingPrice, reportCurrency)}
+            </p>
           </div>
-
-          <div className="flex flex-col items-center justify-center text-center lg:border-r lg:border-border">
-            <div className={`rounded-full p-4 ${config.bgColor}`}>
-              {recommendation === 'buy' && <CheckCircle className={`h-12 w-12 ${config.color}`} weight="fill" />}
-              {recommendation === 'watch' && <Warning className={`h-12 w-12 ${config.color}`} weight="fill" />}
-              {recommendation === 'avoid' && <X className={`h-12 w-12 ${config.color}`} weight="fill" />}
-            </div>
-            <p className={`mt-4 font-display text-2xl font-bold ${config.color}`}>{config.label}</p>
-            <p className="mt-1 text-sm text-muted-foreground">AI Recommendation</p>
+          <div className="rounded-xl border border-border/60 bg-background/70 p-4 print:border-slate-300 print:bg-white">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Recommendation</p>
+            <p className="mt-2 text-xl font-semibold">{recommendationLabel}</p>
           </div>
-
-          <div className="flex flex-col justify-center">
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm text-muted-foreground">Location</p>
-                <p className="font-semibold">{property.city}, {property.country}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Asking Price</p>
-                <p className="font-semibold">{property.currency} {property.askingPrice.toLocaleString()}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Price per m²</p>
-                <p className="font-semibold">{property.currency} {Math.round(property.askingPrice / property.sizeSqm).toLocaleString()}</p>
-              </div>
-            </div>
+          <div className="rounded-xl border border-border/60 bg-background/70 p-4 print:border-slate-300 print:bg-white">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Report Date</p>
+            <p className="mt-2 text-xl font-semibold">{new Date(report.analyzedAt).toLocaleDateString()}</p>
           </div>
         </div>
-      </Card>
+      </header>
 
-      <Card className="p-6">
-        <h2 className="font-display text-2xl font-bold">Executive Summary</h2>
-        <p className="mt-4 leading-relaxed text-foreground/80">{executiveSummary}</p>
+      <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="rounded-xl border border-border/60 bg-background/60 p-5 print:border-slate-300 print:bg-white">
+            <p className="text-sm font-medium text-muted-foreground">Visual Score Card</p>
+            <div className="mt-4 flex items-center justify-between gap-4">
+              <ScoreGauge score={score.overall} size="md" showLabel={false} />
+              <div className="text-right">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Investment Score</p>
+                <p className="mt-1 text-3xl font-bold">{score.overall}/100</p>
+                <Badge className="mt-2 border-none bg-accent/15 text-accent">{recommendationLabel}</Badge>
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 rounded-xl border border-border/60 bg-background/60 p-5 print:border-slate-300 print:bg-white">
+            <h2 className="text-lg font-semibold">Overview</h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Property Title</p>
+                <p className="mt-1 font-medium">{reportTitle}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Location</p>
+                <p className="mt-1 font-medium">{reportLocation}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Asking Price</p>
+                <p className="mt-1 font-medium">{formatCurrency(reportAskingPrice, reportCurrency)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Property Type</p>
+                <p className="mt-1 font-medium">{toTitleCase(property.propertyType)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Size</p>
+                <p className="mt-1 font-medium">{property.sizeSqm} m²</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Bedrooms</p>
+                <p className="mt-1 font-medium">{property.bedrooms}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Condition</p>
+                <p className="mt-1 font-medium">{toTitleCase(property.condition)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-6">
-          <h3 className="font-display text-xl font-bold">Long-Term Rental</h3>
-          <div className="mt-6 space-y-4">
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Monthly Rent</p>
-                <p className="font-display text-3xl font-bold">{property.currency} {rentalYieldEstimate.monthly.toLocaleString()}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Annual Yield</p>
-                <p className="text-2xl font-bold text-success">{rentalYieldEstimate.percentage}%</p>
-              </div>
+        <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
+          <div className="flex items-center gap-2">
+            <ChartBar className="h-5 w-5 text-accent" weight="duotone" />
+            <h2 className="text-lg font-semibold">Financial Analysis</h2>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimated Monthly Rent</p>
+              <p className="mt-1 text-lg font-semibold">{formatCurrency(rentalYieldEstimate.monthly, reportCurrency)}</p>
             </div>
-            <Progress value={score.rentalYield} className="h-2" />
-            <p className="text-sm text-muted-foreground">Score: {score.rentalYield}/100</p>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Annual Rent</p>
+              <p className="mt-1 text-lg font-semibold">{formatCurrency(annualRent, reportCurrency)}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Rental Yield</p>
+              <p className="mt-1 text-lg font-semibold">{rentalYieldEstimate.percentage}%</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Airbnb Yield</p>
+              <p className="mt-1 text-lg font-semibold">{airbnbPotential.percentage}%</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">ROI Estimate</p>
+              <p className="mt-1 text-lg font-semibold">{roiEstimate}%</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Cashflow Estimate</p>
+              <p className="mt-1 text-lg font-semibold">{formatCurrency(cashflowEstimate, reportCurrency)}</p>
+            </div>
           </div>
         </Card>
 
-        <Card className="p-6">
-          <h3 className="font-display text-xl font-bold">Airbnb Potential</h3>
-          <div className="mt-6 space-y-4">
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Monthly Revenue</p>
-                <p className="font-display text-3xl font-bold">{property.currency} {airbnbPotential.monthlyRevenue.toLocaleString()}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Annual Yield</p>
-                <p className="text-2xl font-bold text-success">{airbnbPotential.percentage}%</p>
-              </div>
+        <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
+          <div className="flex items-center gap-2">
+            <Sparkle className="h-5 w-5 text-accent" weight="duotone" />
+            <h2 className="text-lg font-semibold">Investment Thesis</h2>
+          </div>
+
+          <div className="mt-4 space-y-4 text-sm">
+            <div>
+              <p className="font-medium">Top Reasons to Invest</p>
+              <ul className="mt-2 space-y-1 text-muted-foreground">
+                {topReasonsToInvest.map((reason) => (
+                  <li key={reason} className="flex items-start gap-2">
+                    <TrendUp className="mt-0.5 h-4 w-4 flex-shrink-0 text-success" />
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <Progress value={score.airbnbPotential} className="h-2" />
-            <p className="text-sm text-muted-foreground">
-              {airbnbPotential.occupancy}% occupancy @ {property.currency}{airbnbPotential.dailyRate}/night
-            </p>
+
+            <div>
+              <p className="font-medium">Key Strengths</p>
+              <ul className="mt-2 space-y-1 text-muted-foreground">
+                {keyStrengths.map((strength) => (
+                  <li key={strength} className="flex items-start gap-2">
+                    <Buildings className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
+                    <span>{strength}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-medium">Key Risks</p>
+              <ul className="mt-2 space-y-1 text-muted-foreground">
+                {keyRisks.map((risk) => (
+                  <li key={risk} className="flex items-start gap-2">
+                    <WarningCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-warning" />
+                    <span>{risk}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </Card>
       </div>
 
-      <Tabs defaultValue="metrics" className="w-full">
-        <TabsList className="w-full">
-          <TabsTrigger value="metrics" className="flex-1">Detailed Metrics</TabsTrigger>
-          <TabsTrigger value="risks" className="flex-1">Risk Analysis</TabsTrigger>
-        </TabsList>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
+          <div className="flex items-center gap-2">
+            <TrendUp className="h-5 w-5 text-accent" weight="duotone" />
+            <h2 className="text-lg font-semibold">Market Outlook</h2>
+          </div>
+          <div className="mt-4 space-y-3 text-sm">
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Appreciation Estimate</p>
+              <p className="mt-1 font-semibold">+{appreciationPotential.oneYear}% (1Y), +{appreciationPotential.threeYear}% (3Y), +{appreciationPotential.fiveYear}% (5Y)</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Demand Outlook</p>
+              <p className="mt-1 text-muted-foreground">{demandOutlook}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Supply Outlook</p>
+              <p className="mt-1 text-muted-foreground">{supplyOutlook}</p>
+            </div>
+          </div>
+        </Card>
 
-        <TabsContent value="metrics" className="space-y-6">
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Renovation ROI</p>
-              <p className="mt-2 font-display text-2xl font-bold">{renovationROI.roi}%</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {property.currency}{(renovationROI.estimatedCost / 1000).toFixed(0)}k cost → {property.currency}{(renovationROI.valueIncrease / 1000).toFixed(0)}k value
-              </p>
-              <Progress value={score.renovation} className="mt-3 h-1.5" />
-            </Card>
-
-            <Card className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">5-Year Appreciation</p>
-              <p className="mt-2 font-display text-2xl font-bold text-success">+{appreciationPotential.fiveYear}%</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                1Y: +{appreciationPotential.oneYear}% | 3Y: +{appreciationPotential.threeYear}%
-              </p>
-              <Progress value={score.appreciation} className="mt-3 h-1.5" />
-            </Card>
-
-            <Card className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Legal & Compliance</p>
-              <p className="mt-2 font-display text-2xl font-bold">{score.legal}/100</p>
-              <p className="mt-1 text-xs text-muted-foreground">Documentation & permits</p>
-              <Progress value={score.legal} className="mt-3 h-1.5" />
-            </Card>
-
-            <Card className="p-4">
-              <p className="text-sm font-medium text-muted-foreground">Liquidity Score</p>
-              <p className="mt-2 font-display text-2xl font-bold">{score.liquidity}/100</p>
-              <p className="mt-1 text-xs text-muted-foreground">Exit potential</p>
-              <Progress value={score.liquidity} className="mt-3 h-1.5" />
-            </Card>
+        <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
+          <div className="flex items-center gap-2">
+            <ShieldWarning className="h-5 w-5 text-accent" weight="duotone" />
+            <h2 className="text-lg font-semibold">Risk Analysis</h2>
           </div>
 
-          <Card className="p-6">
-            <h3 className="font-display text-xl font-bold">Key Opportunities</h3>
-            <ul className="mt-4 space-y-3">
-              {opportunities.map((opp, i) => (
-                <li key={i} className="flex items-start gap-3">
-                  <TrendUp className="mt-0.5 h-5 w-5 flex-shrink-0 text-success" weight="bold" />
-                  <span className="text-sm text-foreground/80">{opp}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="risks" className="space-y-6">
-          <Card className="p-6">
-            <h3 className="font-display text-xl font-bold">Risk Factors</h3>
-            <ul className="mt-4 space-y-3">
-              {risks.map((risk, i) => (
-                <li key={i} className="flex items-start gap-3">
-                  <Warning className="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" weight="fill" />
-                  <span className="text-sm text-foreground/80">{risk}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="p-6">
-              <h3 className="font-display text-xl font-bold">Assumptions</h3>
-              <ul className="mt-4 space-y-2">
-                {assumptions.map((assumption, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                    <span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" />
-                    <span>{assumption}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-
-            <Card className="p-6">
-              <h3 className="font-display text-xl font-bold">Missing Data</h3>
-              <ul className="mt-4 space-y-2">
-                {missingData.map((data, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                    <TrendDown className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
-                    <span>{data}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Risk Level</p>
+              <p className="mt-1 text-lg font-semibold">{riskLevel}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Risk Explanation</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {keyRisks.length > 0
+                  ? keyRisks.join(' ')
+                  : 'Current assumptions and documentation quality require additional validation during due diligence.'}
+              </p>
+            </div>
           </div>
-        </TabsContent>
-      </Tabs>
+        </Card>
+      </div>
 
-      <Card className={`border-2 ${config.borderColor} p-6`}>
-        <div className="flex items-start justify-between gap-4">
+      <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
+        <div className="flex items-center gap-2">
+          <Sparkle className="h-5 w-5 text-accent" weight="duotone" />
+          <h2 className="text-lg font-semibold">AI Summary</h2>
+        </div>
+
+        <div className="mt-4 space-y-4">
           <div>
-            <h3 className="font-display text-xl font-bold">Next Steps</h3>
-            <p className="mt-2 text-foreground/70">
-              {recommendation === 'buy' && 'This property shows strong investment potential. Consider proceeding with due diligence and making an offer.'}
-              {recommendation === 'watch' && 'This property has potential but requires monitoring. Watch for price changes or additional information.'}
-              {recommendation === 'avoid' && 'This property presents significant risks or poor returns. Consider looking for better opportunities.'}
-            </p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Executive Summary</p>
+            <p className="mt-2 text-sm leading-6 text-foreground/80">{executiveSummary}</p>
           </div>
-          <Badge className={`${config.bgColor} ${config.color} whitespace-nowrap border-none px-4 py-2`}>
-            {config.label}
-          </Badge>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Recommended Action</p>
+            <p className="mt-2 text-sm leading-6 text-foreground/80">{recommendedAction}</p>
+          </div>
+          <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Recommendation</p>
+            <Badge className="mt-2 border-none bg-accent/15 text-accent">{recommendationLabel}</Badge>
+          </div>
         </div>
       </Card>
-    </div>
+    </section>
   )
 }

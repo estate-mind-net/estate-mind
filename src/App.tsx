@@ -21,6 +21,7 @@ import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { NewOpportunityPage } from '@/pages/NewOpportunityPage'
 import { OpportunityDetailPage } from '@/pages/OpportunityDetailPage'
+import { OpportunityInvestmentReportPage } from '@/pages/OpportunityInvestmentReportPage'
 import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
@@ -206,6 +207,14 @@ function App() {
             element={
               <WorkspaceShell>
                 <OpportunityDetailPage />
+              </WorkspaceShell>
+            }
+          />
+          <Route
+            path="/opportunities/:opportunityId/report"
+            element={
+              <WorkspaceShell>
+                <OpportunityInvestmentReportPage />
               </WorkspaceShell>
             }
           />
