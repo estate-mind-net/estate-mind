@@ -1,4 +1,5 @@
 import type { Property, InvestmentAnalysis, Opportunity, DashboardMetrics } from './types'
+import { normalizeOpportunityStage } from './constants/opportunityStages'
 
 export const mockProperties: Property[] = [
   {
@@ -207,7 +208,7 @@ export const mockOpportunities: Opportunity[] = [
     id: 'o1',
     property: mockProperties[0],
     analysis: mockAnalyses[0],
-    status: 'due-diligence',
+    status: normalizeOpportunityStage('due-diligence'),
     tags: ['high-yield', 'airbnb', 'city-center'],
     notes: 'Scheduled viewing next Tuesday. Seller motivated, may accept 410k.',
     savedAt: '2024-01-15T12:00:00Z',
@@ -217,7 +218,7 @@ export const mockOpportunities: Opportunity[] = [
     id: 'o2',
     property: mockProperties[1],
     analysis: mockAnalyses[1],
-    status: 'watching',
+    status: normalizeOpportunityStage('interested'),
     tags: ['luxury', 'sea-view', 'renovation'],
     notes: 'Monitor for price reduction. Kitchen reno budget confirmed.',
     savedAt: '2024-01-10T16:00:00Z',
@@ -226,7 +227,7 @@ export const mockOpportunities: Opportunity[] = [
   {
     id: 'o3',
     property: mockProperties[2],
-    status: 'new-opportunity',
+    status: normalizeOpportunityStage('lead'),
     tags: ['value-add', 'student-rental'],
     notes: 'Initial analysis pending. Requested renovation quotes.',
     savedAt: '2024-01-08T10:00:00Z',
@@ -235,7 +236,7 @@ export const mockOpportunities: Opportunity[] = [
   {
     id: 'o4',
     property: mockProperties[3],
-    status: 'negotiation',
+    status: normalizeOpportunityStage('negotiating'),
     tags: ['luxury', 'new-build', 'airbnb'],
     notes: 'Submitted offer at 1.18M. Awaiting response. Due diligence docs ready.',
     savedAt: '2024-01-05T17:00:00Z',

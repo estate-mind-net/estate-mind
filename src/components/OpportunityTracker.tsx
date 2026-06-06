@@ -31,6 +31,7 @@ import { ScoreGauge } from './ScoreGauge'
 import { mockOpportunities } from '@/lib/mockData'
 import type { Opportunity, OpportunityStatus } from '@/lib/types'
 import { toast } from 'sonner'
+import { opportunityStages, opportunityStageColors, opportunityStageLabels } from '@/lib/constants/opportunityStages'
 
 interface OpportunityTrackerProps {
   onNavigate: (page: string, data?: unknown) => void
@@ -39,20 +40,21 @@ interface OpportunityTrackerProps {
 
 type SortField = 'score' | 'price' | 'yield' | 'updatedAt' | 'savedAt'
 type SortDirection = 'asc' | 'desc'
-type ViewMode = 'all' | 'new-opportunity' | 'initial-analysis' | 'watching' | 'due-diligence' | 'negotiation' | 'acquired' | 'rejected'
+type ViewMode = 'all' | OpportunityStatus
 
 const statusConfig: Record<OpportunityStatus, { 
   label: string
   variant: 'default' | 'secondary' | 'destructive' | 'outline'
   color: string 
 }> = {
-  'new-opportunity': { label: 'New', variant: 'secondary', color: 'oklch(0.75 0.15 195)' },
-  'initial-analysis': { label: 'Initial Analysis', variant: 'outline', color: 'oklch(0.65 0.15 270)' },
-  'watching': { label: 'Watching', variant: 'outline', color: 'oklch(0.75 0.15 75)' },
-  'due-diligence': { label: 'Due Diligence', variant: 'default', color: 'oklch(0.35 0.15 270)' },
-  'negotiation': { label: 'Negotiation', variant: 'default', color: 'oklch(0.75 0.15 75)' },
-  'acquired': { label: 'Acquired', variant: 'default', color: 'oklch(0.65 0.18 145)' },
-  'rejected': { label: 'Rejected', variant: 'destructive', color: 'oklch(0.60 0.22 25)' }
+  lead: { label: opportunityStageLabels.lead, variant: 'secondary', color: opportunityStageColors.lead },
+  interested: { label: opportunityStageLabels.interested, variant: 'outline', color: opportunityStageColors.interested },
+  negotiating: { label: opportunityStageLabels.negotiating, variant: 'default', color: opportunityStageColors.negotiating },
+  'offer-made': { label: opportunityStageLabels['offer-made'], variant: 'default', color: opportunityStageColors['offer-made'] },
+  'due-diligence': { label: opportunityStageLabels['due-diligence'], variant: 'default', color: opportunityStageColors['due-diligence'] },
+  purchased: { label: opportunityStageLabels.purchased, variant: 'default', color: opportunityStageColors.purchased },
+  sold: { label: opportunityStageLabels.sold, variant: 'secondary', color: opportunityStageColors.sold },
+  rejected: { label: opportunityStageLabels.rejected, variant: 'destructive', color: opportunityStageColors.rejected }
 }
 
 const allTags = [
@@ -172,12 +174,13 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
   const statusCounts = useMemo(() => {
     const counts: Record<OpportunityStatus | 'all', number> = {
       all: opportunities?.length ?? 0,
-      'new-opportunity': 0,
-      'initial-analysis': 0,
-      watching: 0,
+      lead: 0,
+      interested: 0,
+      negotiating: 0,
+      'offer-made': 0,
       'due-diligence': 0,
-      negotiation: 0,
-      acquired: 0,
+      purchased: 0,
+      sold: 0,
       rejected: 0
     }
 
@@ -548,28 +551,28 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                 {statusCounts.all}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="new-opportunity" className="relative whitespace-nowrap">
-              New
-              {statusCounts['new-opportunity'] > 0 && (
+            <TabsTrigger value="lead" className="relative whitespace-nowrap">
+              Lead
+              {statusCounts.lead > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts['new-opportunity']}
+                  {statusCounts.lead}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="initial-analysis" className="whitespace-nowrap">
-              <span className="hidden sm:inline">Initial Analysis</span>
-              <span className="sm:hidden">Analysis</span>
-              {statusCounts['initial-analysis'] > 0 && (
+            <TabsTrigger value="interested" className="whitespace-nowrap">
+              <span className="hidden sm:inline">Interested</span>
+              <span className="sm:hidden">Interest</span>
+              {statusCounts.interested > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts['initial-analysis']}
+                  {statusCounts.interested}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="watching" className="whitespace-nowrap">
-              Watching
-              {statusCounts.watching > 0 && (
+            <TabsTrigger value="negotiating" className="whitespace-nowrap">
+              Negotiating
+              {statusCounts.negotiating > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts.watching}
+                  {statusCounts.negotiating}
                 </Badge>
               )}
             </TabsTrigger>
@@ -582,20 +585,28 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="negotiation" className="whitespace-nowrap">
-              <span className="hidden sm:inline">Negotiation</span>
+            <TabsTrigger value="offer-made" className="whitespace-nowrap">
+              <span className="hidden sm:inline">Offer Made</span>
               <span className="sm:hidden">Neg.</span>
-              {statusCounts.negotiation > 0 && (
+              {statusCounts['offer-made'] > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts.negotiation}
+                  {statusCounts['offer-made']}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="acquired" className="whitespace-nowrap">
-              Acquired
-              {statusCounts.acquired > 0 && (
+            <TabsTrigger value="purchased" className="whitespace-nowrap">
+              Purchased
+              {statusCounts.purchased > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                  {statusCounts.acquired}
+                  {statusCounts.purchased}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="sold" className="whitespace-nowrap">
+              Sold
+              {statusCounts.sold > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {statusCounts.sold}
                 </Badge>
               )}
             </TabsTrigger>
@@ -848,16 +859,16 @@ export function OpportunityTracker({ onNavigate, onBack }: OpportunityTrackerPro
               <span className="text-xs sm:text-sm">Active Deals</span>
             </div>
             <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">
-              {statusCounts['due-diligence'] + statusCounts.negotiation}
+              {statusCounts['due-diligence'] + statusCounts.negotiating + statusCounts['offer-made']}
             </p>
           </div>
 
           <div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Tag className="h-4 w-4 sm:h-5 sm:w-5" weight="duotone" />
-              <span className="text-xs sm:text-sm">Watching</span>
+              <span className="text-xs sm:text-sm">Interested</span>
             </div>
-            <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">{statusCounts.watching}</p>
+            <p className="mt-2 font-display text-2xl sm:text-3xl font-bold">{statusCounts.interested}</p>
           </div>
         </div>
       </Card>

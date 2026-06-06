@@ -1,23 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Buildings, MapPin, Sparkle, TrendUp, Warning } from '@phosphor-icons/react'
+import { ArrowLeft, Buildings, ClockCounterClockwise, MapPin, Sparkle, TrendUp, Warning } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScoreGauge } from '@/components/ScoreGauge'
 import { useAuth } from '@/hooks/useAuth'
+import { opportunityStageLabels, opportunityStages, type OpportunityStage } from '@/lib/constants/opportunityStages'
 import { opportunityWorkspaceService, type OpportunityWorkspaceDetail } from '@/services/supabase/opportunityWorkspace.service'
-
-const statusLabels: Record<string, string> = {
-  'new-opportunity': 'New',
-  'initial-analysis': 'Analyzing',
-  watching: 'Watching',
-  'due-diligence': 'Due Diligence',
-  negotiation: 'Negotiation',
-  acquired: 'Acquired',
-  rejected: 'Rejected',
-}
+import { toast } from 'sonner'
 
 const formatCurrency = (currency: string, value: number | null | undefined) => {
   if (value === null || value === undefined) return '—'
@@ -62,6 +55,17 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   )
 }
 
+const formatStageLabel = (stage: OpportunityStage) => opportunityStageLabels[stage]
+
+const formatStageTime = (value: string) =>
+  new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+
 export function OpportunityDetailPage() {
   const navigate = useNavigate()
   const { opportunityId } = useParams<{ opportunityId: string }>()
@@ -69,6 +73,7 @@ export function OpportunityDetailPage() {
   const [item, setItem] = useState<OpportunityWorkspaceDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isUpdatingStage, setIsUpdatingStage] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -131,6 +136,53 @@ export function OpportunityDetailPage() {
     return null
   }, [latestAnalysis])
 
+  const handleStageChange = async (stage: OpportunityStage) => {
+    if (!item || isUpdatingStage || stage === item.stage || !organization?.id) {
+      return
+    }
+
+    setIsUpdatingStage(true)
+
+    try {
+      const result = await opportunityWorkspaceService.updateOpportunityStage(item.id, stage, {
+        organizationId: organization.id,
+        source: 'manual',
+      })
+
+      if (!result.saved) {
+        throw new Error(result.warning ?? 'Failed to update stage.')
+      }
+
+      setItem((current) => {
+        if (!current) return current
+
+        const nextHistory = [
+          ...current.stageHistory,
+          {
+            id: `${current.id}-${stage}-${Date.now()}`,
+            fromStage: current.stage,
+            toStage: stage,
+            changedAt: new Date().toISOString(),
+            source: 'manual' as const,
+          },
+        ]
+
+        return {
+          ...current,
+          stage,
+          updatedAt: new Date().toISOString(),
+          stageHistory: nextHistory,
+        }
+      })
+
+      toast.success(`Stage updated to ${formatStageLabel(stage)}`)
+    } catch (stageError) {
+      toast.error(stageError instanceof Error ? stageError.message : 'Failed to update stage.')
+    } finally {
+      setIsUpdatingStage(false)
+    }
+  }
+
   if (isLoading) {
     return <LoadingState />
   }
@@ -171,7 +223,7 @@ export function OpportunityDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Badge variant="outline">{statusLabels[item.stage] ?? item.stage}</Badge>
+          <Badge variant="outline">{formatStageLabel(item.stage)}</Badge>
           <Badge variant="secondary">{item.priority}</Badge>
         </div>
       </div>
@@ -199,6 +251,36 @@ export function OpportunityDetailPage() {
         </Card>
 
         <div className="space-y-6">
+          <Card className="border-border/70 p-6">
+            <div className="flex items-center gap-2">
+              <ClockCounterClockwise className="h-5 w-5 text-accent" weight="duotone" />
+              <h2 className="font-display text-xl font-bold">CRM Stage</h2>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Current stage</p>
+                <Select value={item.stage} onValueChange={(value) => void handleStageChange(value as OpportunityStage)} disabled={isUpdatingStage}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {opportunityStages.map((stage) => (
+                      <SelectItem key={stage} value={stage}>
+                        {formatStageLabel(stage)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Badge variant="outline" className="justify-center py-2">{formatStageLabel(item.stage)}</Badge>
+                <Badge variant="secondary" className="justify-center py-2">{item.stageHistory.length} changes</Badge>
+              </div>
+            </div>
+          </Card>
+
           <Card className="border-border/70 p-6">
             <div className="flex items-center gap-2">
               <TrendUp className="h-5 w-5 text-accent" weight="duotone" />
@@ -242,6 +324,27 @@ export function OpportunityDetailPage() {
             ) : (
               <p className="mt-5 text-sm text-muted-foreground">AI analysis is not available for this opportunity yet.</p>
             )}
+          </Card>
+
+          <Card className="border-border/70 p-6">
+            <div className="flex items-center gap-2">
+              <ClockCounterClockwise className="h-5 w-5 text-accent" weight="duotone" />
+              <h2 className="font-display text-xl font-bold">Stage History</h2>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {item.stageHistory.map((event) => (
+                <div key={event.id} className="relative rounded-xl border border-border/60 bg-background/60 p-4 pl-5">
+                  <div className="absolute left-0 top-4 h-8 w-1 rounded-full bg-accent" />
+                  <p className="text-xs text-muted-foreground">{formatStageTime(event.changedAt)}</p>
+                  <p className="mt-2 text-sm font-semibold">
+                    {event.fromStage ? `${formatStageLabel(event.fromStage)} → ` : ''}{formatStageLabel(event.toStage)}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{event.source}</p>
+                  {event.note ? <p className="mt-2 text-sm text-foreground/80">{event.note}</p> : null}
+                </div>
+              ))}
+            </div>
           </Card>
 
           <Card className="border-border/70 p-6">

@@ -124,41 +124,54 @@ export function NewOpportunityPage() {
     }
 
     setIsSaving(true)
+    console.info('[new-opportunity] create started')
 
     try {
       const payload = toPayload(formData)
-
-      const result = await opportunityWorkspaceService.createOpportunity(payload, {
-        organizationId: organization.id,
-        userId: user.id,
-        profileId: profile?.id,
-      })
-
-      let warningMessage: string | null = null
+      let opportunityId = ''
 
       try {
-        const analysis = await generateDealAnalysis(toPropertyForAnalysis(payload))
-        const persistResult = await opportunityWorkspaceService.persistOpportunityAnalysis(analysis, {
+        const result = await opportunityWorkspaceService.createOpportunity(payload, {
           organizationId: organization.id,
-          opportunityId: result.opportunityId,
+          userId: user.id,
+          profileId: profile?.id,
         })
+        opportunityId = result.opportunityId
+        console.info('[new-opportunity] create succeeded', { opportunityId })
+      } catch (createError) {
+        throw new Error(createError instanceof Error ? createError.message : 'Failed to create opportunity.')
+      }
 
-        if (!persistResult.saved) {
-          warningMessage = persistResult.warning ?? 'Opportunity was saved, but AI analysis note could not be persisted.'
+      try {
+        navigate(`/opportunities/${opportunityId}`)
+      } catch (navigateError) {
+        console.error('[new-opportunity] navigate failed', navigateError)
+        throw new Error('Opportunity was created, but redirect failed. Please open it from My Opportunities.')
+      }
+
+      toast.success('Opportunity saved successfully. AI analysis will continue in the background.')
+
+      void (async () => {
+        try {
+          const analysis = await generateDealAnalysis(toPropertyForAnalysis(payload))
+          const persistResult = await opportunityWorkspaceService.persistOpportunityAnalysis(analysis, {
+            organizationId: organization.id,
+            opportunityId,
+          })
+
+          if (!persistResult.saved) {
+            const warningMessage = persistResult.warning ?? 'Opportunity was saved, but AI analysis note could not be persisted.'
+            console.warn('[new-opportunity] AI failed', { warning: warningMessage, opportunityId })
+            toast.warning(`Opportunity saved. AI analysis warning: ${warningMessage}`)
+          }
+        } catch (analysisError) {
+          const warningMessage = analysisError instanceof Error
+            ? analysisError.message
+            : 'Opportunity was saved, but AI analysis failed.'
+          console.warn('[new-opportunity] AI failed', { warning: warningMessage, opportunityId })
+          toast.warning(`Opportunity saved. AI analysis warning: ${warningMessage}`)
         }
-      } catch (analysisError) {
-        warningMessage = analysisError instanceof Error
-          ? analysisError.message
-          : 'Opportunity was saved, but AI analysis failed.'
-      }
-
-      if (warningMessage) {
-        toast.warning(`Opportunity saved. AI analysis warning: ${warningMessage}`)
-      } else {
-        toast.success('Opportunity and AI analysis saved successfully.')
-      }
-
-      navigate(`/opportunities/${result.opportunityId}`)
+      })()
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : 'Failed to create opportunity.'
       if (isProduction()) {
@@ -168,6 +181,7 @@ export function NewOpportunityPage() {
       }
     } finally {
       setIsSaving(false)
+      console.info('[new-opportunity] submit finished')
     }
   }
 

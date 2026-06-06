@@ -7,6 +7,7 @@ import type { Opportunity, OpportunityStatus } from '@/lib/types'
 import { ScoreGauge } from './ScoreGauge'
 import { useKV } from '@github/spark/hooks'
 import { mockOpportunities } from '@/lib/mockData'
+import { opportunityStageColors, opportunityStageLabels } from '@/lib/constants/opportunityStages'
 
 interface InvestmentPipelineProps {
   onBack: () => void
@@ -14,12 +15,13 @@ interface InvestmentPipelineProps {
 }
 
 const columns: { id: OpportunityStatus; label: string; color: string }[] = [
-  { id: 'new-opportunity', label: 'New Opportunity', color: 'oklch(0.75 0.15 195)' },
-  { id: 'initial-analysis', label: 'Initial Analysis', color: 'oklch(0.65 0.15 270)' },
-  { id: 'watching', label: 'Watching', color: 'oklch(0.75 0.15 75)' },
-  { id: 'due-diligence', label: 'Due Diligence', color: 'oklch(0.35 0.15 270)' },
-  { id: 'negotiation', label: 'Negotiation', color: 'oklch(0.75 0.15 195)' },
-  { id: 'acquired', label: 'Acquired', color: 'oklch(0.65 0.18 145)' },
+  { id: 'lead', label: opportunityStageLabels.lead, color: opportunityStageColors.lead },
+  { id: 'interested', label: opportunityStageLabels.interested, color: opportunityStageColors.interested },
+  { id: 'negotiating', label: opportunityStageLabels.negotiating, color: opportunityStageColors.negotiating },
+  { id: 'offer-made', label: opportunityStageLabels['offer-made'], color: opportunityStageColors['offer-made'] },
+  { id: 'due-diligence', label: opportunityStageLabels['due-diligence'], color: opportunityStageColors['due-diligence'] },
+  { id: 'purchased', label: opportunityStageLabels.purchased, color: opportunityStageColors.purchased },
+  { id: 'sold', label: opportunityStageLabels.sold, color: opportunityStageColors.sold },
   { id: 'rejected', label: 'Rejected', color: 'oklch(0.60 0.22 25)' }
 ]
 

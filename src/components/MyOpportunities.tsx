@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScoreGauge } from './ScoreGauge'
+import { opportunityStages, opportunityStageLabels, type OpportunityStage } from '@/lib/constants/opportunityStages'
 import { opportunityWorkspaceService, type OpportunityWorkspaceItem } from '@/services/supabase/opportunityWorkspace.service'
 import { useAuth } from '@/hooks/useAuth'
 import type { InvestmentAnalysis } from '@/lib/types'
+import { toast } from 'sonner'
 
 interface MyOpportunitiesProps {
   onNavigate: (page: string, data?: unknown) => void
@@ -16,12 +18,13 @@ interface MyOpportunitiesProps {
 }
 
 const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  'new-opportunity': { label: 'New', variant: 'secondary' },
-  'initial-analysis': { label: 'Analyzing', variant: 'outline' },
-  watching: { label: 'Watching', variant: 'outline' },
+  lead: { label: 'Lead', variant: 'secondary' },
+  interested: { label: 'Interested', variant: 'outline' },
+  negotiating: { label: 'Negotiating', variant: 'default' },
+  'offer-made': { label: 'Offer Made', variant: 'default' },
   'due-diligence': { label: 'Due Diligence', variant: 'default' },
-  negotiation: { label: 'Negotiation', variant: 'default' },
-  acquired: { label: 'Acquired', variant: 'default' },
+  purchased: { label: 'Purchased', variant: 'default' },
+  sold: { label: 'Sold', variant: 'secondary' },
   rejected: { label: 'Rejected', variant: 'destructive' },
 }
 
@@ -191,6 +194,17 @@ function WorkflowRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function StagePill({ stage, count }: { stage: OpportunityStage; count: number }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-background/60 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium">{opportunityStageLabels[stage]}</span>
+        <Badge variant="secondary">{count}</Badge>
+      </div>
+    </div>
+  )
+}
+
 function OpportunityDetail({
   opportunity,
   onBack,
@@ -298,13 +312,91 @@ function OpportunityDetail({
   )
 }
 
+function StageBoard({
+  items,
+  onOpen,
+  onStageChange,
+}: {
+  items: OpportunityWorkspaceItem[]
+  onOpen: (item: OpportunityWorkspaceItem) => void
+  onStageChange: (item: OpportunityWorkspaceItem, stage: OpportunityStage) => void
+}) {
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-2">
+      {opportunityStages.map((stage) => {
+        const stageItems = items.filter((item) => item.stage === stage)
+
+        return (
+          <div
+            key={stage}
+            className="w-80 flex-shrink-0"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault()
+              const droppedItem = items.find((item) => item.id === draggedId)
+              if (droppedItem) {
+                onStageChange(droppedItem, stage)
+              }
+              setDraggedId(null)
+            }}
+          >
+            <div className="mb-3 flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold">{opportunityStageLabels[stage]}</p>
+                <p className="text-xs text-muted-foreground">{stageItems.length} opportunities</p>
+              </div>
+              <Badge variant="outline">{stageItems.length}</Badge>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-background/40 p-3 min-h-[320px]">
+              {stageItems.map((item) => (
+                <Card
+                  key={item.id}
+                  draggable
+                  onDragStart={() => setDraggedId(item.id)}
+                  onDragEnd={() => setDraggedId(null)}
+                  className={`cursor-move border-border/70 p-4 transition-all hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-lg ${
+                    draggedId === item.id ? 'border-accent bg-accent/5' : ''
+                  }`}
+                  onClick={() => onOpen(item)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate font-display text-base font-bold">{item.title}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.city}, {item.country}</p>
+                    </div>
+                    {item.analysis ? <ScoreGauge score={item.analysis.score.overall} size="sm" showLabel={false} /> : null}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <span>{item.currency} {item.askingPrice.toLocaleString()}</span>
+                    <span>{item.priority}</span>
+                  </div>
+                </Card>
+              ))}
+
+              {stageItems.length === 0 ? (
+                <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/70 text-sm text-muted-foreground">
+                  Drop opportunities here
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
   const { organization } = useAuth()
   const [items, setItems] = useState<OpportunityWorkspaceItem[] | null>(null)
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
+  const [viewMode, setViewMode] = useState<'cards' | 'table' | 'board'>('cards')
 
   const loadItems = async () => {
     setIsLoading(true)
@@ -340,9 +432,37 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
       : 0
     const highPriority = items?.filter((item) => item.priority === 'high').length ?? 0
     const currency = items?.[0]?.currency ?? 'EUR'
+    const stageCounts = opportunityStages.reduce((accumulator, stage) => {
+      accumulator[stage] = items?.filter((item) => item.stage === stage).length ?? 0
+      return accumulator
+    }, {} as Record<OpportunityStage, number>)
 
-    return { opportunityCount, withAnalysis, avgRent, highPriority, currency }
+    return { opportunityCount, withAnalysis, avgRent, highPriority, currency, stageCounts }
   }, [items])
+
+  const updateStage = async (item: OpportunityWorkspaceItem, stage: OpportunityStage) => {
+    if (!organization?.id || item.stage === stage) {
+      return
+    }
+
+    const result = await opportunityWorkspaceService.updateOpportunityStage(item.id, stage, {
+      organizationId: organization.id,
+      source: 'drag',
+    })
+
+    if (!result.saved) {
+      toast.error(result.warning ?? 'Failed to update stage.')
+      return
+    }
+
+    setItems((current) => current?.map((entry) => (entry.id === item.id ? { ...entry, stage, updatedAt: new Date().toISOString() } : entry)) ?? null)
+
+    if (result.warning) {
+      toast.warning(result.warning)
+    } else {
+      toast.success(`Moved to ${opportunityStageLabels[stage]}`)
+    }
+  }
 
   if (isLoading) {
     return <LoadingState />
@@ -417,16 +537,32 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
         </Card>
       </div>
 
+      <Card className="border-border/70 p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-display text-2xl font-bold">Stage Statistics</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Current pipeline distribution across the CRM workflow.</p>
+          </div>
+          <Badge variant="outline">{metrics.opportunityCount} total</Badge>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {opportunityStages.map((stage) => (
+            <StagePill key={stage} stage={stage} count={metrics.stageCounts[stage]} />
+          ))}
+        </div>
+      </Card>
+
       <Card className="border-border/70 bg-card/80 p-4 sm:p-6">
-        <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as 'cards' | 'table')}>
+        <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as 'cards' | 'table' | 'board')}>
           <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 className="font-display text-2xl font-bold">Workspace</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Switch between compact cards and a table layout.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Switch between cards, table, and Kanban board layouts.</p>
             </div>
             <TabsList>
               <TabsTrigger value="cards">Cards</TabsTrigger>
               <TabsTrigger value="table">Table</TabsTrigger>
+              <TabsTrigger value="board">Board</TabsTrigger>
             </TabsList>
           </div>
 
@@ -477,6 +613,16 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
                 </table>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="board" className="mt-0">
+            <StageBoard
+              items={items}
+              onOpen={(item) => setSelectedOpportunityId(item.id)}
+              onStageChange={(item, stage) => {
+                void updateStage(item, stage)
+              }}
+            />
           </TabsContent>
         </Tabs>
       </Card>

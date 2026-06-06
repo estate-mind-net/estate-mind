@@ -9,18 +9,20 @@ import { Button } from '@/components/ui/button'
 import { opportunityWorkspaceService, type OpportunityWorkspaceItem } from '@/services/supabase/opportunityWorkspace.service'
 import { useAuth } from '@/hooks/useAuth'
 import type { AIInsight, DashboardMetrics, OpportunityStatus } from '@/lib/types'
+import { opportunityStageLabels } from '@/lib/constants/opportunityStages'
 
 interface DashboardProps {
   onNavigate: (page: string, data?: unknown) => void
 }
 
 const statusConfig: Record<OpportunityStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  'new-opportunity': { label: 'New', variant: 'secondary' },
-  'initial-analysis': { label: 'Analyzing', variant: 'outline' },
-  'watching': { label: 'Watching', variant: 'outline' },
+  lead: { label: opportunityStageLabels.lead, variant: 'secondary' },
+  interested: { label: opportunityStageLabels.interested, variant: 'outline' },
+  negotiating: { label: opportunityStageLabels.negotiating, variant: 'default' },
+  'offer-made': { label: opportunityStageLabels['offer-made'], variant: 'default' },
   'due-diligence': { label: 'Due Diligence', variant: 'default' },
-  'negotiation': { label: 'Negotiation', variant: 'default' },
-  'acquired': { label: 'Acquired', variant: 'default' },
+  purchased: { label: opportunityStageLabels.purchased, variant: 'default' },
+  sold: { label: opportunityStageLabels.sold, variant: 'secondary' },
   'rejected': { label: 'Rejected', variant: 'destructive' }
 }
 
@@ -72,7 +74,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       : 0
 
     const portfolioValue = opportunities.reduce((sum, item) => sum + item.askingPrice, 0)
-    const activeDeals = opportunities.filter((item) => ['due-diligence', 'negotiation', 'watching'].includes(item.stage)).length
+    const activeDeals = opportunities.filter((item) => ['due-diligence', 'negotiating', 'offer-made'].includes(item.stage)).length
     const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
     const analyzedThisMonth = scored.filter((item) => {
       const analyzedAt = item.analysis?.analyzedAt
@@ -261,11 +263,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs sm:text-sm text-muted-foreground">Offer Stage</span>
-                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'negotiation').length}</span>
+                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'negotiating').length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs sm:text-sm text-muted-foreground">Watching</span>
-                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'watching').length}</span>
+                <span className="text-xs sm:text-sm text-muted-foreground">Interested</span>
+                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'interested').length}</span>
               </div>
             </div>
           </Card>

@@ -21,12 +21,13 @@ export const PROPERTY_CONDITIONS = [
 ] as const
 
 export const OPPORTUNITY_STATUSES = [
-  { value: 'new-opportunity', label: 'New Opportunity', color: 'oklch(0.75 0.15 195)' },
-  { value: 'initial-analysis', label: 'Initial Analysis', color: 'oklch(0.65 0.15 270)' },
-  { value: 'watching', label: 'Watching', color: 'oklch(0.75 0.15 75)' },
+  { value: 'lead', label: 'Lead', color: 'oklch(0.74 0.15 210)' },
+  { value: 'interested', label: 'Interested', color: 'oklch(0.68 0.14 265)' },
+  { value: 'negotiating', label: 'Negotiating', color: 'oklch(0.72 0.18 190)' },
+  { value: 'offer-made', label: 'Offer Made', color: 'oklch(0.78 0.16 82)' },
   { value: 'due-diligence', label: 'Due Diligence', color: 'oklch(0.35 0.15 270)' },
-  { value: 'negotiation', label: 'Negotiation', color: 'oklch(0.75 0.15 195)' },
-  { value: 'acquired', label: 'Acquired', color: 'oklch(0.65 0.18 145)' },
+  { value: 'purchased', label: 'Purchased', color: 'oklch(0.65 0.18 145)' },
+  { value: 'sold', label: 'Sold', color: 'oklch(0.58 0.14 160)' },
   { value: 'rejected', label: 'Rejected', color: 'oklch(0.60 0.22 25)' }
 ] as const
 
@@ -37,12 +38,13 @@ export const SCORE_THRESHOLDS = {
 } as const
 
 export const BADGE_VARIANTS = {
-  'new-opportunity': 'secondary' as const,
-  'initial-analysis': 'outline' as const,
-  'watching': 'outline' as const,
+  lead: 'secondary' as const,
+  interested: 'outline' as const,
+  negotiating: 'default' as const,
+  'offer-made': 'default' as const,
   'due-diligence': 'default' as const,
-  'negotiation': 'default' as const,
-  'acquired': 'default' as const,
+  purchased: 'default' as const,
+  sold: 'secondary' as const,
   'rejected': 'destructive' as const
 }
 

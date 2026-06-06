@@ -1,29 +1,11 @@
-import type { OpportunityStatus } from '../types'
+import { opportunityStageColors, opportunityStageLabels, type OpportunityStage } from '../constants/opportunityStages'
 
-export function getStatusColor(status: OpportunityStatus): string {
-  const colors: Record<OpportunityStatus, string> = {
-    'new-opportunity': 'oklch(0.75 0.15 195)',
-    'initial-analysis': 'oklch(0.65 0.15 270)',
-    'watching': 'oklch(0.75 0.15 75)',
-    'due-diligence': 'oklch(0.35 0.15 270)',
-    'negotiation': 'oklch(0.75 0.15 195)',
-    'acquired': 'oklch(0.65 0.18 145)',
-    'rejected': 'oklch(0.60 0.22 25)',
-  }
-  return colors[status]
+export function getStatusColor(status: OpportunityStage): string {
+  return opportunityStageColors[status]
 }
 
-export function getStatusLabel(status: OpportunityStatus): string {
-  const labels: Record<OpportunityStatus, string> = {
-    'new-opportunity': 'New Opportunity',
-    'initial-analysis': 'Initial Analysis',
-    'watching': 'Watching',
-    'due-diligence': 'Due Diligence',
-    'negotiation': 'Negotiation',
-    'acquired': 'Acquired',
-    'rejected': 'Rejected',
-  }
-  return labels[status]
+export function getStatusLabel(status: OpportunityStage): string {
+  return opportunityStageLabels[status]
 }
 
 export function getScoreColor(score: number): string {

@@ -1,14 +1,17 @@
 import type { Property } from './property'
 import type { InvestmentAnalysis } from './analysis'
+import type { OpportunityStage } from '../constants/opportunityStages'
 
-export type OpportunityStatus = 
-  | 'new-opportunity' 
-  | 'initial-analysis' 
-  | 'watching' 
-  | 'due-diligence' 
-  | 'negotiation' 
-  | 'acquired' 
-  | 'rejected'
+export type OpportunityStatus = OpportunityStage
+
+export interface OpportunityStageHistoryEntry {
+  id: string
+  fromStage: OpportunityStatus | null
+  toStage: OpportunityStatus
+  changedAt: string
+  source: 'manual' | 'drag' | 'analysis' | 'import'
+  note?: string
+}
 
 export interface Opportunity {
   id: string

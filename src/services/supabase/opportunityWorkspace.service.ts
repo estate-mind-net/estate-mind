@@ -1,4 +1,5 @@
-import type { InvestmentAnalysis, Opportunity, Property } from '@/lib/types'
+import type { InvestmentAnalysis, Opportunity, OpportunityStageHistoryEntry, Property } from '@/lib/types'
+import { normalizeOpportunityStage } from '@/lib/constants/opportunityStages'
 import { getSupabaseClient } from './client'
 
 type PropertyRow = {
@@ -45,6 +46,7 @@ export interface OpportunityNoteSnapshot {
 
 export interface OpportunityWorkspaceDetail extends OpportunityWorkspaceItem {
   notes: OpportunityNoteSnapshot[]
+  stageHistory: OpportunityStageHistoryEntry[]
 }
 
 export interface OpportunityWorkspaceItem {
@@ -143,7 +145,11 @@ const shouldRetryWithoutListingUrl = (message: string) => {
   return isListingUrlIssue(message) && isColumnIssue(message)
 }
 
-const stageFallback: Opportunity['status'] = 'initial-analysis'
+const stageFallback: Opportunity['status'] = 'lead'
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
 
 const safeNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -169,12 +175,47 @@ const parseAnalysisSnapshot = (content: string | null): InvestmentAnalysis | nul
   }
 
   try {
-    const parsed = JSON.parse(content) as Partial<InvestmentAnalysis>
-    if (!parsed || typeof parsed !== 'object') {
+    const parsed = JSON.parse(content)
+    if (!isRecord(parsed)) {
+      return null
+    }
+
+    const score = isRecord(parsed.score) ? parsed.score : null
+    const rentalYieldEstimate = isRecord(parsed.rentalYieldEstimate) ? parsed.rentalYieldEstimate : null
+
+    if (!score || typeof score.overall !== 'number' || !rentalYieldEstimate || typeof rentalYieldEstimate.percentage !== 'number') {
       return null
     }
 
     return parsed as InvestmentAnalysis
+  } catch {
+    return null
+  }
+}
+
+const parseStageHistoryEvent = (
+  content: string | null,
+  fallbackId: string,
+  fallbackAt: string,
+): OpportunityStageHistoryEntry | null => {
+  if (!content) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(content)
+    if (!isRecord(parsed) || parsed.type !== 'stage-change') {
+      return null
+    }
+
+    return {
+      id: typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : fallbackId,
+      fromStage: typeof parsed.fromStage === 'string' ? normalizeOpportunityStage(parsed.fromStage) : null,
+      toStage: typeof parsed.toStage === 'string' ? normalizeOpportunityStage(parsed.toStage) : 'lead',
+      changedAt: typeof parsed.changedAt === 'string' ? parsed.changedAt : fallbackAt,
+      source: parsed.source === 'drag' || parsed.source === 'analysis' || parsed.source === 'import' ? parsed.source : 'manual',
+      note: typeof parsed.note === 'string' && parsed.note.trim().length > 0 ? parsed.note : undefined,
+    }
   } catch {
     return null
   }
@@ -214,7 +255,7 @@ const mapRowsToItem = (
     askingPrice: mappedProperty.askingPrice,
     currency: mappedProperty.currency,
     expectedMonthlyRent: opportunity.expected_monthly_rent ?? mappedProperty.expectedRent ?? null,
-    stage: (opportunity.stage as Opportunity['status']) ?? stageFallback,
+    stage: normalizeOpportunityStage(opportunity.stage ?? stageFallback),
     priority: opportunity.priority ?? 'medium',
     createdAt: opportunity.created_at ?? property.created_at ?? mappedProperty.createdAt,
     updatedAt: opportunity.updated_at ?? property.updated_at ?? opportunity.created_at ?? mappedProperty.createdAt,
@@ -229,6 +270,23 @@ const mapRowsToItem = (
         }
       : null,
   }
+}
+
+const buildStageChangeNote = (
+  fromStage: Opportunity['status'] | null,
+  toStage: Opportunity['status'],
+  source: OpportunityStageHistoryEntry['source'],
+  note?: string,
+) => {
+  return JSON.stringify({
+    id: crypto.randomUUID(),
+    type: 'stage-change',
+    fromStage,
+    toStage,
+    changedAt: new Date().toISOString(),
+    source,
+    note,
+  })
 }
 
 const isMissingEstimatedRoiColumn = (message: string) => {
@@ -261,7 +319,7 @@ export class OpportunityWorkspaceService {
     const summary = `AI analyzed ${new Date().toISOString()}. Recommendation: ${analysis.recommendation}.`
     const basePayload = {
       expected_monthly_rent: analysis.rentalYieldEstimate.monthly,
-      stage: 'initial-analysis',
+      stage: 'interested',
       notes: summary,
     }
 
@@ -289,6 +347,69 @@ export class OpportunityWorkspaceService {
 
     if (fallbackAttempt.error) {
       throw new Error(fallbackAttempt.error.message ?? fallbackAttempt.error.details ?? 'Failed to update opportunity analysis fields.')
+    }
+  }
+
+  async updateOpportunityStage(
+    opportunityId: string,
+    stage: Opportunity['status'],
+    context: {
+      organizationId: string
+      note?: string
+      source?: OpportunityStageHistoryEntry['source']
+    },
+  ): Promise<PersistOpportunityAnalysisResult> {
+    try {
+      const client = getSupabaseClient()
+      if (!client) {
+        throw new Error('Supabase is unavailable.')
+      }
+
+      const currentResult = await client
+        .from('opportunities')
+        .select('stage')
+        .eq('organization_id', context.organizationId)
+        .eq('id', opportunityId)
+        .maybeSingle()
+
+      if (currentResult.error) {
+        throw new Error(currentResult.error.message ?? 'Failed to load current opportunity stage.')
+      }
+
+      const previousStage = normalizeOpportunityStage((currentResult.data as { stage?: string | null } | null)?.stage ?? null)
+
+      const updateResult = await client
+        .from('opportunities')
+        .update({ stage, updated_at: new Date().toISOString() })
+        .eq('organization_id', context.organizationId)
+        .eq('id', opportunityId)
+
+      if (updateResult.error) {
+        throw new Error(updateResult.error.message ?? 'Failed to update opportunity stage.')
+      }
+
+      const noteContent = buildStageChangeNote(previousStage, stage, context.source ?? 'manual', context.note)
+      const noteResult = await client.from('notes').insert([
+        {
+          organization_id: context.organizationId,
+          opportunity_id: opportunityId,
+          content: noteContent,
+        },
+      ])
+
+      if (noteResult.error) {
+        return {
+          saved: true,
+          warning: noteResult.error.message ?? 'Stage updated but history note could not be saved.',
+        }
+      }
+
+      return { saved: true }
+    } catch (error) {
+      return {
+        saved: false,
+        warning: error instanceof Error ? error.message : 'Failed to update opportunity stage.',
+      }
     }
   }
 
@@ -407,7 +528,7 @@ export class OpportunityWorkspaceService {
       organization_id: organizationId,
       property_id: propertyId,
       title: input.title,
-      stage: 'new-opportunity',
+      stage: 'lead',
       priority: 'medium',
       notes: input.listingUrl ? `Listing URL: ${input.listingUrl}` : '',
     }
@@ -554,10 +675,26 @@ export class OpportunityWorkspaceService {
 
     const latestNote = notes[0]
     const item = mapRowsToItem(opportunity, property, latestNote)
+    const stageHistory = [...notes]
+      .reverse()
+      .map((note) => parseStageHistoryEvent(note.content, note.id, note.createdAt))
+      .filter((entry): entry is OpportunityStageHistoryEntry => entry !== null)
+
+    if (stageHistory.length === 0) {
+      stageHistory.push({
+        id: `${opportunity.id}-stage-initial`,
+        fromStage: null,
+        toStage: item.stage,
+        changedAt: item.createdAt,
+        source: 'import',
+        note: 'Opportunity created',
+      })
+    }
 
     return {
       ...item,
       notes,
+      stageHistory,
     }
   }
 

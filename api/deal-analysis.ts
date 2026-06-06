@@ -3,6 +3,7 @@
 // Frontend calls: fetch('/api/deal-analysis', { method: 'POST', body: JSON.stringify({ property }) })
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
+const OPENAI_TIMEOUT_MS = 20_000
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -557,7 +558,14 @@ export default async function handler(request: Request): Promise<Response> {
     return sendJson(200, { ok: true, analysis: fallbackAnalysis })
   }
 
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const controller = new AbortController()
+
   try {
+    timeoutId = setTimeout(() => {
+      controller.abort()
+    }, OPENAI_TIMEOUT_MS)
+
     const openAIResponse = await fetch(OPENAI_API_URL, {
       method: 'POST',
       headers: {
@@ -573,6 +581,7 @@ export default async function handler(request: Request): Promise<Response> {
           { role: 'user', content: buildPrompt(property) },
         ],
       }),
+      signal: controller.signal,
     })
 
     if (!openAIResponse.ok) {
@@ -582,24 +591,54 @@ export default async function handler(request: Request): Promise<Response> {
         statusText: openAIResponse.statusText,
         providerMessage: providerBody.slice(0, 500),
       })
-      return sendJson(502, { ok: false, error: 'AI provider request failed.' })
+      const fallbackAnalysis = normalizeAnalysis({}, property)
+      return sendJson(200, {
+        ok: true,
+        analysis: fallbackAnalysis,
+        meta: { fallback: true, reason: 'provider-error' },
+      })
     }
 
     const rawResponseText = await openAIResponse.text()
     if (debug) console.debug('[deal-analysis] raw OpenAI response', rawResponseText)
 
-    const openAIPayload = JSON.parse(rawResponseText) as {
-      choices?: Array<{ message?: { content?: string } }>
+    let openAIPayload: { choices?: Array<{ message?: { content?: string } }> }
+    try {
+      openAIPayload = JSON.parse(rawResponseText) as { choices?: Array<{ message?: { content?: string } }> }
+    } catch (parseError) {
+      console.error('[deal-analysis] provider JSON parse failed', parseError)
+      const fallbackAnalysis = normalizeAnalysis({}, property)
+      return sendJson(200, {
+        ok: true,
+        analysis: fallbackAnalysis,
+        meta: { fallback: true, reason: 'provider-json-parse-failed' },
+      })
     }
     if (debug) console.debug('[deal-analysis] parsed OpenAI response JSON', openAIPayload)
 
     const content = openAIPayload.choices?.[0]?.message?.content
     if (!content) {
       console.error('OpenAI response did not contain content')
-      return sendJson(502, { ok: false, error: 'AI provider returned empty content.' })
+      const fallbackAnalysis = normalizeAnalysis({}, property)
+      return sendJson(200, {
+        ok: true,
+        analysis: fallbackAnalysis,
+        meta: { fallback: true, reason: 'provider-empty-content' },
+      })
     }
 
-    const structured = JSON.parse(content)
+    let structured: unknown
+    try {
+      structured = JSON.parse(content)
+    } catch (contentParseError) {
+      console.error('[deal-analysis] content JSON parse failed', contentParseError)
+      const fallbackAnalysis = normalizeAnalysis({}, property)
+      return sendJson(200, {
+        ok: true,
+        analysis: fallbackAnalysis,
+        meta: { fallback: true, reason: 'content-json-parse-failed' },
+      })
+    }
     if (debug) {
       const s = structured && typeof structured === 'object' ? (structured as Record<string, unknown>) : {}
       console.debug('[deal-analysis] raw score fields', {
@@ -625,10 +664,26 @@ export default async function handler(request: Request): Promise<Response> {
 
     return sendJson(200, { ok: true, analysis })
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.error('[deal-analysis] OpenAI timed out after 20s; returning deterministic fallback')
+      const fallbackAnalysis = normalizeAnalysis({}, property)
+      return sendJson(200, {
+        ok: true,
+        analysis: fallbackAnalysis,
+        meta: { fallback: true, reason: 'timeout' },
+      })
+    }
+
     console.error('[AI ANALYSIS FATAL]', error)
-    return sendJson(500, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
+    const fallbackAnalysis = normalizeAnalysis({}, property)
+    return sendJson(200, {
+      ok: true,
+      analysis: fallbackAnalysis,
+      meta: { fallback: true, reason: 'fatal-error', error: error instanceof Error ? error.message : String(error) },
     })
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
   }
 }
