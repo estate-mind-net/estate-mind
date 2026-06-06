@@ -14,7 +14,10 @@ type DealAnalysisResponse = DealAnalysisSuccess | DealAnalysisFailure
 
 export async function generateDealAnalysis(property: Property): Promise<InvestmentAnalysis> {
   try {
-    const response = await fetch('/api/deal-analysis', {
+    const url = new URL('/api/deal-analysis', window.location.origin).toString()
+    console.log('[AI REQUEST URL]', url)
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
