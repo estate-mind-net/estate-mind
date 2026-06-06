@@ -185,11 +185,9 @@ export function NewOpportunityPage() {
           </p>
         </div>
 
-        {!isProduction() ? (
-          <Button type="button" variant="outline" onClick={handleFillDemoData}>
-            Fill Demo Data
-          </Button>
-        ) : null}
+        <Button type="button" variant="outline" onClick={handleFillDemoData}>
+          Fill Demo Data
+        </Button>
       </div>
 
       <Card className="p-6 sm:p-8">
