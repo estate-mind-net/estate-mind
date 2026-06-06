@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { ErrorBoundary } from 'react-error-boundary'
 import { Toaster } from '@/components/ui/sonner'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
 import { persistDealAnalyzerResult } from '@/services/supabase/dealPersistence.service'
+import { ErrorFallback } from '@/ErrorFallback'
 import type { Property, InvestmentAnalysis, Opportunity } from '@/lib/types'
 
 interface AuthPageGuardProps {
@@ -210,7 +212,9 @@ function App() {
             path="/opportunities/:opportunityId"
             element={
               <WorkspaceShell>
-                <OpportunityDetailPage />
+                <ErrorBoundary FallbackComponent={ErrorFallback}>
+                  <OpportunityDetailPage />
+                </ErrorBoundary>
               </WorkspaceShell>
             }
           />

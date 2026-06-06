@@ -39,6 +39,53 @@ export interface AppreciationPotential {
   fiveYear: number
 }
 
+export type AnalysisConfidenceLevel = 'low' | 'medium' | 'high'
+
+export interface ExecutiveDecision {
+  recommendation: 'BUY' | 'WATCH' | 'AVOID'
+  score: number
+  confidence: 'Low' | 'Medium' | 'High'
+  summary: string
+}
+
+export interface FinancialModel {
+  askingPrice: number
+  estimatedMonthlyRent: number
+  annualRent: number
+  grossRentalYield: number
+  airbnbYield: number
+  estimatedROI: number
+  projectedValue5Year: number
+  estimatedMonthlyCashflow: number
+}
+
+export interface ScenarioAnalysisRow {
+  monthlyRent: number
+  rentalYield: number
+  annualROI: number
+  projectedRoi5Year: number
+  projectedPropertyValue5Year: number
+}
+
+export interface ScenarioAnalysis {
+  conservative: ScenarioAnalysisRow
+  base: ScenarioAnalysisRow
+  optimistic: ScenarioAnalysisRow
+}
+
+export interface InvestmentThesis {
+  reasonsToInvest: string[]
+  risks: string[]
+  upsideOpportunities: string[]
+}
+
+export interface DataQuality {
+  usedLiveMarketData: boolean
+  usedDeterministicFallback: boolean
+  confidenceLevel: 'Low' | 'Medium' | 'High'
+  missingData: string[]
+}
+
 export interface InvestmentAnalysis {
   id: string
   propertyId: string
@@ -54,5 +101,13 @@ export interface InvestmentAnalysis {
   opportunities: string[]
   assumptions: string[]
   missingData: string[]
+  confidenceLevel?: AnalysisConfidenceLevel
+  executiveDecision?: ExecutiveDecision
+  financialModel?: FinancialModel
+  scenarioAnalysis?: ScenarioAnalysis
+  investmentThesisDetail?: InvestmentThesis
+  dueDiligenceChecklist?: string[]
+  dataQuality?: DataQuality
+  reportText?: string
   analyzedAt: string
 }

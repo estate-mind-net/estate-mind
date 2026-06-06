@@ -5,13 +5,89 @@ import { defineConfig, PluginOption } from "vite";
 import sparkPlugin from "@github/spark/spark-vite-plugin";
 import createIconImportProxy from "@github/spark/vitePhosphorIconProxyPlugin";
 import { resolve } from 'path'
+import { handleDealAnalysisRequest } from './src/lib/server/dealAnalysisHandler'
 
 const projectRoot = process.env.PROJECT_ROOT || import.meta.dirname
+
+const readRequestBody = async (req: { on: Function }): Promise<string> => {
+  return new Promise((resolveBody, rejectBody) => {
+    const chunks: Uint8Array[] = []
+    req.on('data', (chunk: Uint8Array | string) => {
+      if (typeof chunk === 'string') {
+        chunks.push(Buffer.from(chunk))
+      } else {
+        chunks.push(chunk)
+      }
+    })
+    req.on('end', () => {
+      resolveBody(Buffer.concat(chunks).toString('utf-8'))
+    })
+    req.on('error', (error: unknown) => {
+      rejectBody(error)
+    })
+  })
+}
+
+const dealAnalysisDevMiddleware = (): PluginOption => ({
+  name: 'deal-analysis-dev-middleware',
+  apply: 'serve',
+  configureServer(server) {
+    // npm run dev uses this middleware for /api/deal-analysis.
+    // Vercel production and `vercel dev` use api/deal-analysis.ts.
+    // Both routes call the same shared server handler.
+    server.middlewares.use(async (req, res, next) => {
+      const path = (req.url ?? '').split('?')[0]
+      if (path !== '/api/deal-analysis') {
+        next()
+        return
+      }
+
+      try {
+        const headers = new Headers()
+        Object.entries(req.headers).forEach(([key, value]) => {
+          if (typeof value === 'string') {
+            headers.set(key, value)
+            return
+          }
+
+          if (Array.isArray(value)) {
+            headers.set(key, value.join(','))
+          }
+        })
+
+        const method = req.method ?? 'GET'
+        const hasBody = method !== 'GET' && method !== 'HEAD'
+        const bodyText = hasBody ? await readRequestBody(req as unknown as { on: Function }) : ''
+        const request = new Request(`http://127.0.0.1:5000${req.url ?? '/api/deal-analysis'}`, {
+          method,
+          headers,
+          body: hasBody ? bodyText : undefined,
+        })
+
+        const response = await handleDealAnalysisRequest(request)
+        res.statusCode = response.status
+        response.headers.forEach((value, key) => {
+          res.setHeader(key, value)
+        })
+        const payload = await response.text()
+        res.end(payload)
+      } catch (error) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({
+          ok: false,
+          error: error instanceof Error ? error.message : 'Internal server error in Vite middleware.',
+        }))
+      }
+    })
+  },
+})
 
 // https://vite.dev/config/
 export default defineConfig({
   envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   plugins: [
+    dealAnalysisDevMiddleware(),
     react(),
     tailwindcss(),
     // DO NOT REMOVE

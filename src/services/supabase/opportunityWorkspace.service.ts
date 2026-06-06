@@ -295,9 +295,35 @@ const isMissingEstimatedRoiColumn = (message: string) => {
 }
 
 export class OpportunityWorkspaceService {
+  private buildReportText(analysis: InvestmentAnalysis): string {
+    if (analysis.reportText && analysis.reportText.trim().length > 0) {
+      return analysis.reportText
+    }
+
+    const recommendation = analysis.executiveDecision?.recommendation ?? analysis.recommendation.toUpperCase()
+    const score = analysis.executiveDecision?.score ?? analysis.score.overall
+    const confidence = analysis.executiveDecision?.confidence
+      ?? (analysis.confidenceLevel ? `${analysis.confidenceLevel.charAt(0).toUpperCase()}${analysis.confidenceLevel.slice(1)}` : 'Medium')
+    const checklist = (analysis.dueDiligenceChecklist ?? []).slice(0, 6)
+    const reasons = (analysis.investmentThesisDetail?.reasonsToInvest ?? analysis.opportunities).slice(0, 3)
+    const risks = (analysis.investmentThesisDetail?.risks ?? analysis.risks).slice(0, 3)
+    const upsides = (analysis.investmentThesisDetail?.upsideOpportunities ?? analysis.opportunities).slice(0, 3)
+
+    return [
+      `Executive Decision: ${recommendation} | Score ${score}/100 | Confidence ${confidence}`,
+      analysis.executiveSummary,
+      `Financial Model: Asking ${analysis.property.askingPrice}, Monthly Rent ${analysis.rentalYieldEstimate.monthly}, Annual Rent ${analysis.rentalYieldEstimate.annual}, Gross Yield ${analysis.rentalYieldEstimate.percentage}%, Airbnb Yield ${analysis.airbnbPotential.percentage}%.`,
+      `Investment Thesis - Reasons: ${reasons.join('; ')}. Risks: ${risks.join('; ')}. Upside: ${upsides.join('; ')}.`,
+      checklist.length > 0 ? `Due Diligence Checklist: ${checklist.join(' | ')}` : 'Due Diligence Checklist: Validate rental comps, legal status, renovation scope, taxes/fees, building condition, and financing assumptions.',
+    ].join('\n\n')
+  }
+
   private buildAiNoteContent(analysis: InvestmentAnalysis) {
+    const reportText = this.buildReportText(analysis)
+
     return {
       ...analysis,
+      reportText,
       snapshot: {
         estimatedMonthlyRent: analysis.rentalYieldEstimate.monthly,
         roiEstimate: estimateRoi(analysis),

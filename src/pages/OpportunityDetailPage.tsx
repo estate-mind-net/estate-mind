@@ -34,6 +34,16 @@ const takeShortSentence = (value: string | undefined) => {
   return sentence.length > 120 ? `${sentence.slice(0, 117)}...` : sentence
 }
 
+const safeNumber = (value: unknown, fallback = 0) => {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+const safeList = (value: unknown, fallback: string[] = []) => {
+  if (!Array.isArray(value)) return fallback
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+}
+
 function LoadingState() {
   return (
     <div className="space-y-6">
@@ -134,6 +144,112 @@ export function OpportunityDetailPage() {
     }
 
     return null
+  }, [latestAnalysis])
+
+  const snapshotDecision = useMemo(() => {
+    if (!latestAnalysis) return null
+
+    const recommendation = latestAnalysis.executiveDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation ?? 'watch')
+    const score = safeNumber(latestAnalysis.executiveDecision?.score, safeNumber(latestAnalysis.score?.overall, 0))
+    const confidence = latestAnalysis.executiveDecision?.confidence ?? confidenceLevel ?? 'Medium'
+
+    return { recommendation, score, confidence }
+  }, [latestAnalysis, confidenceLevel])
+
+  const snapshotScenarios = useMemo(() => {
+    if (!latestAnalysis) return null
+
+    const existingScenarios = latestAnalysis.scenarioAnalysis
+    const hasExistingScenarios = Boolean(
+      existingScenarios?.conservative &&
+      existingScenarios?.base &&
+      existingScenarios?.optimistic,
+    )
+    if (hasExistingScenarios) {
+      return {
+        conservative: {
+          monthlyRent: safeNumber(existingScenarios?.conservative?.monthlyRent, 0),
+          rentalYield: safeNumber(existingScenarios?.conservative?.rentalYield, 0),
+          annualROI: safeNumber(existingScenarios?.conservative?.annualROI, 0),
+          projectedRoi5Year: safeNumber(existingScenarios?.conservative?.projectedRoi5Year, 0),
+          projectedPropertyValue5Year: safeNumber(existingScenarios?.conservative?.projectedPropertyValue5Year, 0),
+        },
+        base: {
+          monthlyRent: safeNumber(existingScenarios?.base?.monthlyRent, 0),
+          rentalYield: safeNumber(existingScenarios?.base?.rentalYield, 0),
+          annualROI: safeNumber(existingScenarios?.base?.annualROI, 0),
+          projectedRoi5Year: safeNumber(existingScenarios?.base?.projectedRoi5Year, 0),
+          projectedPropertyValue5Year: safeNumber(existingScenarios?.base?.projectedPropertyValue5Year, 0),
+        },
+        optimistic: {
+          monthlyRent: safeNumber(existingScenarios?.optimistic?.monthlyRent, 0),
+          rentalYield: safeNumber(existingScenarios?.optimistic?.rentalYield, 0),
+          annualROI: safeNumber(existingScenarios?.optimistic?.annualROI, 0),
+          projectedRoi5Year: safeNumber(existingScenarios?.optimistic?.projectedRoi5Year, 0),
+          projectedPropertyValue5Year: safeNumber(existingScenarios?.optimistic?.projectedPropertyValue5Year, 0),
+        },
+      }
+    }
+
+    const baseAskingPrice = item?.askingPrice ?? 0
+    const baseMonthlyRent = safeNumber(latestAnalysis.rentalYieldEstimate?.monthly, item?.expectedMonthlyRent ?? 0)
+    const baseRentalYield = safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)
+    const oneYearAppreciation = safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)
+    const fiveYearAppreciation = safeNumber(latestAnalysis.appreciationPotential?.fiveYear, 0)
+    const baseAnnualRoi = Number((baseRentalYield + oneYearAppreciation).toFixed(1))
+
+    return {
+      conservative: {
+        monthlyRent: Math.round(baseMonthlyRent * 0.9),
+        rentalYield: Number((baseRentalYield * 0.9).toFixed(1)),
+        annualROI: Number((baseAnnualRoi * 0.85).toFixed(1)),
+        projectedRoi5Year: Number((baseAnnualRoi * 5 * 0.7).toFixed(1)),
+        projectedPropertyValue5Year: Math.round(baseAskingPrice * 1.08),
+      },
+      base: {
+        monthlyRent: baseMonthlyRent,
+        rentalYield: baseRentalYield,
+        annualROI: baseAnnualRoi,
+        projectedRoi5Year: Number((baseAnnualRoi * 5 * 0.78).toFixed(1)),
+        projectedPropertyValue5Year: Math.round(baseAskingPrice * (1 + fiveYearAppreciation / 100)),
+      },
+      optimistic: {
+        monthlyRent: Math.round(baseMonthlyRent * 1.12),
+        rentalYield: Number((baseRentalYield * 1.12).toFixed(1)),
+        annualROI: Number((baseAnnualRoi * 1.15).toFixed(1)),
+        projectedRoi5Year: Number((baseAnnualRoi * 5 * 0.9).toFixed(1)),
+        projectedPropertyValue5Year: Math.round(baseAskingPrice * 1.2),
+      },
+    }
+  }, [latestAnalysis, item?.askingPrice, item?.expectedMonthlyRent])
+
+  const snapshotThesis = useMemo(() => {
+    if (!latestAnalysis) return null
+
+    const opportunities = safeList(latestAnalysis.opportunities)
+    const risks = safeList(latestAnalysis.risks)
+
+    return latestAnalysis.investmentThesisDetail ?? {
+      reasonsToInvest: opportunities.slice(0, 3),
+      risks: risks.slice(0, 3),
+      upsideOpportunities: opportunities.slice(0, 3),
+    }
+  }, [latestAnalysis])
+
+  const snapshotChecklist = useMemo(() => {
+    if (!latestAnalysis) return []
+
+    const checklist = safeList(latestAnalysis.dueDiligenceChecklist)
+    if (checklist.length > 0) return checklist
+
+    return [
+      'Validate rental comps using nearby comparable listings.',
+      'Perform legal review for title, liens, and permits.',
+      'Confirm renovation estimate with contractor quotes.',
+      'Validate taxes, acquisition fees, and operating costs.',
+      'Review building condition report and deferred maintenance.',
+      'Stress-test financing assumptions and debt service coverage.',
+    ]
   }, [latestAnalysis])
 
   const handleStageChange = async (stage: OpportunityStage) => {
@@ -289,29 +405,90 @@ export function OpportunityDetailPage() {
 
             {latestAnalysis ? (
               <div className="mt-5 space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <Badge variant="outline" className="border-accent/40 text-accent">
-                    {toRecommendationLabel(latestAnalysis.recommendation)}
-                  </Badge>
-                  <ScoreGauge score={latestAnalysis.score.overall} size="sm" showLabel={false} />
+                <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <Badge variant="outline" className="border-accent/40 text-accent">
+                      {snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)}
+                    </Badge>
+                    <ScoreGauge score={snapshotDecision?.score ?? latestAnalysis.score.overall} size="sm" showLabel={false} />
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <InfoBlock label="Recommendation" value={snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)} />
+                    <InfoBlock label="Investment Score" value={`${snapshotDecision?.score ?? latestAnalysis.score.overall}/100`} />
+                    <InfoBlock label="Confidence" value={snapshotDecision?.confidence ?? confidenceLevel ?? 'Medium'} />
+                  </div>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <InfoBlock label="Recommendation" value={toRecommendationLabel(latestAnalysis.recommendation)} />
-                  <InfoBlock label="Investment Score" value={`${latestAnalysis.score.overall}/100`} />
-                  <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate.monthly)} />
-                  <InfoBlock label="Rental Yield" value={`${latestAnalysis.rentalYieldEstimate.percentage}%`} />
-                  <InfoBlock label="ROI Estimate" value={`${(latestAnalysis.rentalYieldEstimate.percentage + latestAnalysis.appreciationPotential.oneYear).toFixed(2)}%`} />
-                  {confidenceLevel ? <InfoBlock label="Confidence Level" value={confidenceLevel} /> : null}
+                  <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate?.monthly ?? item.expectedMonthlyRent)} />
+                  <InfoBlock label="Rental Yield" value={`${safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)}%`} />
+                  <InfoBlock label="ROI Estimate" value={`${(safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0) + safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)).toFixed(2)}%`} />
+                  <InfoBlock label="5Y Appreciation" value={`${safeNumber(latestAnalysis.appreciationPotential?.fiveYear, 0)}%`} />
                 </div>
 
-                <div className="space-y-3 rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
-                  <p>
-                    <span className="font-semibold">Top Strength:</span> {takeShortSentence(latestAnalysis.opportunities[0])}
-                  </p>
-                  <p>
-                    <span className="font-semibold">Top Risk:</span> {takeShortSentence(latestAnalysis.risks[0])}
-                  </p>
+                <div className="overflow-x-auto rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+                  <p className="mb-2 font-semibold">Scenario Analysis</p>
+                  <table className="min-w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border/50 text-muted-foreground">
+                        <th className="px-2 py-1">Scenario</th>
+                        <th className="px-2 py-1">Rent</th>
+                        <th className="px-2 py-1">Yield</th>
+                        <th className="px-2 py-1">Annual ROI</th>
+                        <th className="px-2 py-1">5Y ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {snapshotScenarios ? [
+                        ['Conservative', snapshotScenarios.conservative],
+                        ['Base', snapshotScenarios.base],
+                        ['Optimistic', snapshotScenarios.optimistic],
+                      ].map(([label, row]) => (
+                        <tr key={label} className="border-b border-border/30">
+                          <td className="px-2 py-1 font-medium">{label}</td>
+                          <td className="px-2 py-1">{formatCurrency(item.currency, (row as typeof snapshotScenarios.base).monthlyRent)}</td>
+                          <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).rentalYield}%</td>
+                          <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).annualROI}%</td>
+                          <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).projectedRoi5Year}%</td>
+                        </tr>
+                      )) : null}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                    <p className="font-semibold">Reasons to Invest</p>
+                    <ul className="mt-2 space-y-1 text-muted-foreground">
+                      {(snapshotThesis?.reasonsToInvest ?? latestAnalysis.opportunities).slice(0, 3).map((reason) => (
+                        <li key={reason}>• {takeShortSentence(reason)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                    <p className="font-semibold">Key Risks</p>
+                    <ul className="mt-2 space-y-1 text-muted-foreground">
+                      {(snapshotThesis?.risks ?? latestAnalysis.risks).slice(0, 3).map((risk) => (
+                        <li key={risk}>• {takeShortSentence(risk)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm sm:col-span-2">
+                    <p className="font-semibold">Upside Opportunities</p>
+                    <ul className="mt-2 space-y-1 text-muted-foreground">
+                      {(snapshotThesis?.upsideOpportunities ?? latestAnalysis.opportunities).slice(0, 3).map((upside) => (
+                        <li key={upside}>• {takeShortSentence(upside)}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm sm:col-span-2">
+                    <p className="font-semibold">Due Diligence Checklist</p>
+                    <ul className="mt-2 space-y-1 text-muted-foreground">
+                      {snapshotChecklist.slice(0, 6).map((check) => (
+                        <li key={check}>• {takeShortSentence(check)}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

@@ -1,4 +1,4 @@
-import { deriveDeterministicEstimates } from '@/lib/utils/deterministicEstimates'
+import { deriveDeterministicEstimates } from '../../../lib/utils/deterministicEstimates'
 import type { AirbnbPoint, AirbnbProvider, MarketDataPropertyContext } from '../types'
 
 export class MockAirbnbProvider implements AirbnbProvider {
