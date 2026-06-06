@@ -387,6 +387,10 @@ export function MyOpportunities({ onNavigate, onBack }: MyOpportunitiesProps) {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Dashboard
           </Button>
+          <Button variant="outline" onClick={() => onNavigate('compare')}>
+            <ChartLine className="mr-2 h-4 w-4" />
+            Compare Properties
+          </Button>
           <Button onClick={() => onNavigate('new-opportunity')} className="bg-accent text-accent-foreground hover:bg-accent/90">
             <Plus className="mr-2 h-4 w-4" />
             Analyze Property

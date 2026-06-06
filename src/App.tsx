@@ -9,6 +9,7 @@ import { DealAnalyzer } from '@/components/DealAnalyzer'
 import { InvestmentReport } from '@/components/InvestmentReport'
 import { PricingPage } from '@/components/PricingPage'
 import { PortfolioAnalytics } from '@/components/PortfolioAnalytics'
+import { PortfolioDashboard } from '@/components/PortfolioDashboard'
 import { MyOpportunities } from '@/components/MyOpportunities'
 import { InvestmentPipeline } from '@/components/InvestmentPipeline'
 import { PresentationPage } from '@/components/PresentationPage'
@@ -22,6 +23,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { NewOpportunityPage } from '@/pages/NewOpportunityPage'
 import { OpportunityDetailPage } from '@/pages/OpportunityDetailPage'
 import { OpportunityInvestmentReportPage } from '@/pages/OpportunityInvestmentReportPage'
+import { PropertyComparisonPage } from '@/pages/PropertyComparisonPage'
 import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
@@ -80,11 +82,13 @@ function App() {
       'new-opportunity': '/opportunities/new',
       pricing: '/pricing',
       analytics: '/analytics',
+      portfolio: '/portfolio',
       pipeline: '/pipeline',
       settings: '/settings',
       presentation: '/presentation',
       'founding-partner-presentation': '/presentation/founding-partner',
       reports: '/reports',
+      compare: '/compare',
     }
 
     navigate(routeMap[page] ?? '/')
@@ -219,6 +223,7 @@ function App() {
             }
           />
           <Route path="/reports" element={<WorkspaceShell><ReportsContent /></WorkspaceShell>} />
+          <Route path="/compare" element={<WorkspaceShell><PropertyComparisonPage /></WorkspaceShell>} />
           <Route path="/settings" element={<WorkspaceShell><SettingsPage /></WorkspaceShell>} />
 
           <Route path="/analyzer" element={<WorkspaceShell><DealAnalyzer onAnalyze={handleAnalyze} /></WorkspaceShell>} />
@@ -230,6 +235,7 @@ function App() {
               </WorkspaceShell>
             }
           />
+          <Route path="/portfolio" element={<WorkspaceShell><PortfolioDashboard /></WorkspaceShell>} />
           <Route path="/analytics" element={<WorkspaceShell><PortfolioAnalytics onBack={() => navigate('/dashboard')} /></WorkspaceShell>} />
         </Route>
 

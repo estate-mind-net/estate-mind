@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
+import { exportElementToA4Pdf } from '@/lib/utils/pdfExport'
 import { opportunityWorkspaceService, type OpportunityWorkspaceDetail } from '@/services/supabase/opportunityWorkspace.service'
 
 function LoadingState() {
@@ -24,6 +25,7 @@ export function OpportunityInvestmentReportPage() {
   const [item, setItem] = useState<OpportunityWorkspaceDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -103,6 +105,30 @@ export function OpportunityInvestmentReportPage() {
     )
   }
 
+  const exportTargetId = `investment-report-export-${item.id}`
+
+  const handleExportPdf = async () => {
+    if (isExportingPdf) {
+      return
+    }
+
+    const exportElement = document.getElementById(exportTargetId)
+    if (!exportElement) {
+      return
+    }
+
+    setIsExportingPdf(true)
+
+    try {
+      await exportElementToA4Pdf({
+        element: exportElement,
+        propertyTitle: item.title,
+      })
+    } finally {
+      setIsExportingPdf(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card p-4 print:hidden">
@@ -119,21 +145,23 @@ export function OpportunityInvestmentReportPage() {
             <Printer className="mr-2 h-4 w-4" />
             Print Report
           </Button>
-          <Button variant="outline" disabled>
+          <Button variant="outline" onClick={handleExportPdf} disabled={isExportingPdf}>
             <DownloadSimple className="mr-2 h-4 w-4" />
-            Export PDF (Soon)
+            {isExportingPdf ? 'Exporting PDF...' : 'Export PDF'}
           </Button>
         </div>
       </div>
 
-      <InvestmentReport
-        analysis={latestAnalysis}
-        title={item.title}
-        location={`${item.city}, ${item.country}`}
-        askingPrice={item.askingPrice}
-        currency={item.currency}
-        showHeaderActions={false}
-      />
+      <div id={exportTargetId}>
+        <InvestmentReport
+          analysis={latestAnalysis}
+          title={item.title}
+          location={`${item.city}, ${item.country}`}
+          askingPrice={item.askingPrice}
+          currency={item.currency}
+          showHeaderActions={false}
+        />
+      </div>
     </div>
   )
 }

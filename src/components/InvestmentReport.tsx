@@ -1,4 +1,5 @@
-import { ArrowLeft, Buildings, ChartBar, MapPin, Printer, ShieldWarning, Sparkle, TrendUp, WarningCircle } from '@phosphor-icons/react'
+import { useRef, useState } from 'react'
+import { ArrowLeft, Buildings, ChartBar, DownloadSimple, MapPin, Printer, ShieldWarning, Sparkle, TrendUp, WarningCircle } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -6,6 +7,7 @@ import { ScoreGauge } from './ScoreGauge'
 import type { InvestmentAnalysis } from '@/lib/types'
 import { mockAnalyses } from '@/lib/mockData'
 import { cn } from '@/lib/utils'
+import { exportElementToA4Pdf } from '@/lib/utils/pdfExport'
 
 interface InvestmentReportProps {
   analysis?: InvestmentAnalysis
@@ -55,6 +57,9 @@ const getRiskLevel = (analysis: InvestmentAnalysis): 'Low' | 'Medium' | 'High' =
 }
 
 export function InvestmentReport({ analysis, onBack, title, location, askingPrice, currency, className, showHeaderActions = true }: InvestmentReportProps) {
+  const reportRef = useRef<HTMLElement | null>(null)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
+
   const report = analysis || mockAnalyses[0]
   const {
     property,
@@ -112,8 +117,25 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
         ? 'Monitor pricing and micro-market indicators while collecting missing legal and tenancy data.'
         : 'Avoid commitment until risk drivers are mitigated and return assumptions materially improve.'
 
+  const handleExportPdf = async () => {
+    if (!reportRef.current || isExportingPdf) {
+      return
+    }
+
+    setIsExportingPdf(true)
+
+    try {
+      await exportElementToA4Pdf({
+        element: reportRef.current,
+        propertyTitle: reportTitle,
+      })
+    } finally {
+      setIsExportingPdf(false)
+    }
+  }
+
   return (
-    <section className={cn('mx-auto max-w-6xl space-y-6 print:max-w-none print:space-y-4 print:text-black', className)}>
+    <section ref={reportRef} className={cn('mx-auto max-w-6xl space-y-6 print:max-w-none print:space-y-4 print:text-black', className)}>
       <header className="rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-accent/10 p-6 print:border-slate-300 print:bg-white">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
@@ -136,6 +158,10 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
               <Button variant="secondary" onClick={() => window.print()}>
                 <Printer className="mr-2 h-4 w-4" />
                 Print Report
+              </Button>
+              <Button variant="outline" onClick={handleExportPdf} disabled={isExportingPdf}>
+                <DownloadSimple className="mr-2 h-4 w-4" />
+                {isExportingPdf ? 'Exporting PDF...' : 'Export PDF'}
               </Button>
             </div>
           ) : null}
