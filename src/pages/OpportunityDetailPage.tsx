@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Buildings, ClockCounterClockwise, MapPin, Sparkle, TrendUp, Warning } from '@phosphor-icons/react'
+import { ArrowLeft, Buildings, CircleNotch, ClockCounterClockwise, MapPin, Sparkle, TrendUp, Warning } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -84,6 +84,9 @@ export function OpportunityDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isUpdatingStage, setIsUpdatingStage] = useState(false)
+  const [isPollingAnalysis, setIsPollingAnalysis] = useState(false)
+  const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollingDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -117,6 +120,56 @@ export function OpportunityDetailPage() {
 
     void load()
   }, [opportunityId, organization?.id])
+
+  const hasAnalysis = useMemo(() => {
+    if (!item) return false
+    return Boolean(item.notes.find((note) => Boolean(note.parsedAnalysis)) ?? item.analysis)
+  }, [item])
+
+  const stopPolling = useCallback(() => {
+    if (pollingTimerRef.current !== null) {
+      clearInterval(pollingTimerRef.current)
+      pollingTimerRef.current = null
+    }
+    if (pollingDeadlineRef.current !== null) {
+      clearTimeout(pollingDeadlineRef.current)
+      pollingDeadlineRef.current = null
+    }
+    setIsPollingAnalysis(false)
+  }, [])
+
+  // Poll for AI analysis when the opportunity has none yet.
+  // This page only reads; NewOpportunityPage is responsible for triggering AI.
+  useEffect(() => {
+    if (!opportunityId || !organization?.id || hasAnalysis || isLoading) return
+
+    setIsPollingAnalysis(true)
+
+    const poll = async () => {
+      try {
+        const data = await opportunityWorkspaceService.getOpportunityById(opportunityId, {
+          organizationId: organization.id,
+        })
+        if (!data) return
+        const analysisFound = Boolean(data.notes.find((n) => Boolean(n.parsedAnalysis)) ?? data.analysis)
+        if (analysisFound) {
+          setItem(data)
+          stopPolling()
+        }
+      } catch {
+        // Silently ignore poll errors; stop on deadline
+      }
+    }
+
+    pollingTimerRef.current = setInterval(() => { void poll() }, 2500)
+
+    // Stop polling after 40 seconds regardless
+    pollingDeadlineRef.current = setTimeout(() => {
+      stopPolling()
+    }, 40_000)
+
+    return () => { stopPolling() }
+  }, [opportunityId, organization?.id, hasAnalysis, isLoading, stopPolling])
 
   const latestAnalysis = useMemo(() => {
     if (!item) {
@@ -403,6 +456,13 @@ export function OpportunityDetailPage() {
               <h2 className="font-display text-xl font-bold">AI Snapshot</h2>
             </div>
 
+            {isPollingAnalysis && !latestAnalysis ? (
+              <div className="mt-5 flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
+                <CircleNotch className="h-4 w-4 animate-spin flex-shrink-0" />
+                <span>Running AI analysis… this usually takes 10–20 seconds.</span>
+              </div>
+            ) : null}
+
             {latestAnalysis ? (
               <div className="mt-5 space-y-4">
                 <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
@@ -498,9 +558,9 @@ export function OpportunityDetailPage() {
                   <p className="text-xs text-muted-foreground">Full Investment Reports are part of the Pro workflow.</p>
                 </div>
               </div>
-            ) : (
+            ) : !isPollingAnalysis ? (
               <p className="mt-5 text-sm text-muted-foreground">AI analysis is not available for this opportunity yet.</p>
-            )}
+            ) : null}
           </Card>
 
           <Card className="border-border/70 p-6">
@@ -531,7 +591,12 @@ export function OpportunityDetailPage() {
             </div>
 
             <div className="mt-5 space-y-3">
-              {item.notes.length === 0 ? (
+              {item.notes.length === 0 && isPollingAnalysis ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CircleNotch className="h-4 w-4 animate-spin flex-shrink-0" />
+                  <span>Waiting for AI notes…</span>
+                </div>
+              ) : item.notes.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No AI notes yet.</p>
               ) : (
                 item.notes.map((note) => (
