@@ -19,9 +19,9 @@ interface MarketDataProviders {
 }
 
 const readEnv = (key: string): string => {
-  const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
   const processEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-  return String(importMetaEnv?.[key] ?? processEnv?.[key] ?? '').trim()
+  const runtimeEnv = (globalThis as { __ENV__?: Record<string, string | undefined> }).__ENV__
+  return String(processEnv?.[key] ?? runtimeEnv?.[key] ?? '').trim()
 }
 
 const resolveProviderMode = (): MarketDataProviderMode => {

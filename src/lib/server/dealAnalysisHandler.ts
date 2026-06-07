@@ -180,7 +180,7 @@ const hasExplicitNearZeroRationale = (details: string[]): boolean => {
   return details.some((detail) => severeNegativeSignal.test(detail))
 }
 
-const isPropertyPayload = (value: unknown): value is Record<string, unknown> => {
+export const isPropertyPayload = (value: unknown): value is Record<string, unknown> => {
   if (!value || typeof value !== 'object') return false
   const p = value as Record<string, unknown>
   return (
@@ -744,173 +744,170 @@ export async function handleDealAnalysisRequest(request: Request): Promise<Respo
       headers: { 'Content-Type': 'application/json' },
     })
 
-  if (request.method !== 'POST') {
-    return sendJson(405, { ok: false, error: 'Method not allowed.' })
-  }
+  let recoveryProperty: Record<string, unknown> | null = null
+  let recoveryMarketData: MarketDataBundle | null = null
 
-  const apiKey = process.env.OPENAI_API_KEY ?? ''
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
-  const debug = process.env.DEBUG_OPENAI_RESPONSE === '1'
-
-  console.log('[AI] Request received')
-  console.log('[AI] OpenAI key exists:', !!apiKey)
-  console.log('[AI] Model:', model)
-
-  let body: Record<string, unknown>
-  try {
-    body = (await request.json()) as Record<string, unknown>
-  } catch {
-    return sendJson(400, { ok: false, error: 'Invalid JSON body.' })
-  }
-
-  const property = body.property
-  console.log('[AI] Property:', property)
-
-  if (!isPropertyPayload(property)) {
-    return sendJson(400, { ok: false, error: 'Invalid property payload.' })
-  }
-
-  const marketData = await resolveMarketData(property)
-
-  if (!apiKey) {
-    console.log('[AI] No API key — returning deterministic fallback')
+  const buildFallbackResponse = (
+    property: Record<string, unknown>,
+    marketData: MarketDataBundle | null,
+    reason: string,
+    extraMeta: Record<string, unknown> = {},
+  ): Response => {
+    console.warn('[AI API] fallback used', { reason })
     const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
+
     return sendJson(200, {
       ok: true,
       analysis: fallbackAnalysis,
       meta: {
-        marketDataProviderMode: marketData.providerMode,
-        marketDataAvailable: Boolean(marketData.propertyPrice || marketData.rental || marketData.airbnb),
+        fallback: true,
+        reason,
+        marketDataProviderMode: marketData?.providerMode ?? 'disabled',
+        marketDataAvailable: Boolean(marketData?.propertyPrice || marketData?.rental || marketData?.airbnb),
+        ...extraMeta,
       },
     })
   }
 
-  let timeoutId: ReturnType<typeof setTimeout> | null = null
-  const controller = new AbortController()
-
   try {
-    timeoutId = setTimeout(() => {
-      controller.abort()
-    }, OPENAI_TIMEOUT_MS)
-
-    const openAIResponse = await fetch(OPENAI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'You generate conservative real-estate investment analysis as strict JSON.' },
-          { role: 'user', content: buildPrompt(property, marketData) },
-        ],
-      }),
-      signal: controller.signal,
-    })
-
-    if (!openAIResponse.ok) {
-      const providerBody = await openAIResponse.text()
-      console.error('OpenAI request failed', {
-        status: openAIResponse.status,
-        statusText: openAIResponse.statusText,
-        providerMessage: providerBody.slice(0, 500),
-      })
-      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
-      return sendJson(200, {
-        ok: true,
-        analysis: fallbackAnalysis,
-        meta: { fallback: true, reason: 'provider-error' },
-      })
+    if (request.method !== 'POST') {
+      return sendJson(405, { ok: false, error: 'Method not allowed.' })
     }
 
-    const rawResponseText = await openAIResponse.text()
-    if (debug) console.debug('[deal-analysis] raw OpenAI response', rawResponseText)
+    const apiKey = process.env.OPENAI_API_KEY ?? ''
+    const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
+    const debug = process.env.DEBUG_OPENAI_RESPONSE === '1'
 
-    let openAIPayload: { choices?: Array<{ message?: { content?: string } }> }
+    console.log('[AI API] request received')
+    console.log('[AI API] key exists', !!apiKey)
+
+    let body: Record<string, unknown>
     try {
-      openAIPayload = JSON.parse(rawResponseText) as { choices?: Array<{ message?: { content?: string } }> }
-    } catch (parseError) {
-      console.error('[deal-analysis] provider JSON parse failed', parseError)
-      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
-      return sendJson(200, {
-        ok: true,
-        analysis: fallbackAnalysis,
-        meta: { fallback: true, reason: 'provider-json-parse-failed' },
-      })
-    }
-    if (debug) console.debug('[deal-analysis] parsed OpenAI response JSON', openAIPayload)
-
-    const content = openAIPayload.choices?.[0]?.message?.content
-    if (!content) {
-      console.error('OpenAI response did not contain content')
-      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
-      return sendJson(200, {
-        ok: true,
-        analysis: fallbackAnalysis,
-        meta: { fallback: true, reason: 'provider-empty-content' },
-      })
+      body = (await request.json()) as Record<string, unknown>
+    } catch {
+      return sendJson(400, { ok: false, error: 'Invalid JSON body.' })
     }
 
-    let structured: unknown
+    const property = body.property
+    if (!isPropertyPayload(property)) {
+      return sendJson(400, { ok: false, error: 'Invalid property payload.' })
+    }
+
+    recoveryProperty = property
+    const marketData = await resolveMarketData(property)
+    recoveryMarketData = marketData
+
+    if (!apiKey) {
+      return buildFallbackResponse(property, marketData, 'missing-api-key')
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const controller = new AbortController()
+
     try {
-      structured = JSON.parse(content)
-    } catch (contentParseError) {
-      console.error('[deal-analysis] content JSON parse failed', contentParseError)
-      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
-      return sendJson(200, {
-        ok: true,
-        analysis: fallbackAnalysis,
-        meta: { fallback: true, reason: 'content-json-parse-failed' },
-      })
-    }
-    if (debug) {
-      const s = structured && typeof structured === 'object' ? (structured as Record<string, unknown>) : {}
-      console.debug('[deal-analysis] raw score fields', {
-        overallScore: s.overallScore,
-        score: s.score,
-        investmentScore: s.investmentScore,
-        metrics: s.metrics,
-        confidence: s.confidence,
-        confidenceLevel: s.confidenceLevel,
-      })
-    }
+      timeoutId = setTimeout(() => {
+        controller.abort()
+      }, OPENAI_TIMEOUT_MS)
 
-    const analysis = normalizeAnalysis(structured, property, marketData)
-    if (debug) {
-      console.debug('[deal-analysis] normalized score fields', {
-        score: analysis.score,
-        overallScore: (analysis as Record<string, unknown>).overallScore,
-        metrics: (analysis as Record<string, unknown>).metrics,
-        confidenceLevel: (analysis as Record<string, unknown>).confidenceLevel,
+      const openAIResponse = await fetch(OPENAI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: 'You generate conservative real-estate investment analysis as strict JSON.' },
+            { role: 'user', content: buildPrompt(property, marketData) },
+          ],
+        }),
+        signal: controller.signal,
       })
-      console.debug('[deal-analysis] normalized analysis', analysis)
-    }
 
-    return sendJson(200, { ok: true, analysis })
+      if (!openAIResponse.ok) {
+        const providerBody = await openAIResponse.text()
+        console.error('OpenAI request failed', {
+          status: openAIResponse.status,
+          statusText: openAIResponse.statusText,
+          providerMessage: providerBody.slice(0, 500),
+        })
+        return buildFallbackResponse(property, marketData, 'provider-error')
+      }
+
+      const rawResponseText = await openAIResponse.text()
+      if (debug) console.debug('[deal-analysis] raw OpenAI response', rawResponseText)
+
+      let openAIPayload: { choices?: Array<{ message?: { content?: string } }> }
+      try {
+        openAIPayload = JSON.parse(rawResponseText) as { choices?: Array<{ message?: { content?: string } }> }
+      } catch (parseError) {
+        console.error('[deal-analysis] provider JSON parse failed', parseError)
+        return buildFallbackResponse(property, marketData, 'provider-json-parse-failed')
+      }
+      if (debug) console.debug('[deal-analysis] parsed OpenAI response JSON', openAIPayload)
+
+      const content = openAIPayload.choices?.[0]?.message?.content
+      if (!content) {
+        console.error('OpenAI response did not contain content')
+        return buildFallbackResponse(property, marketData, 'provider-empty-content')
+      }
+
+      let structured: unknown
+      try {
+        structured = JSON.parse(content)
+      } catch (contentParseError) {
+        console.error('[deal-analysis] content JSON parse failed', contentParseError)
+        return buildFallbackResponse(property, marketData, 'content-json-parse-failed')
+      }
+      if (debug) {
+        const s = structured && typeof structured === 'object' ? (structured as Record<string, unknown>) : {}
+        console.debug('[deal-analysis] raw score fields', {
+          overallScore: s.overallScore,
+          score: s.score,
+          investmentScore: s.investmentScore,
+          metrics: s.metrics,
+          confidence: s.confidence,
+          confidenceLevel: s.confidenceLevel,
+        })
+      }
+
+      const analysis = normalizeAnalysis(structured, property, marketData)
+      if (debug) {
+        console.debug('[deal-analysis] normalized score fields', {
+          score: analysis.score,
+          overallScore: (analysis as Record<string, unknown>).overallScore,
+          metrics: (analysis as Record<string, unknown>).metrics,
+          confidenceLevel: (analysis as Record<string, unknown>).confidenceLevel,
+        })
+        console.debug('[deal-analysis] normalized analysis', analysis)
+      }
+
+      return sendJson(200, { ok: true, analysis })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return buildFallbackResponse(property, marketData, 'timeout')
+      }
+
+      console.error('[AI API] fatal fallback recovery', error)
+      return buildFallbackResponse(property, marketData, 'fatal-error', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      console.error('[deal-analysis] OpenAI timed out after 20s; returning deterministic fallback')
-      const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
-      return sendJson(200, {
-        ok: true,
-        analysis: fallbackAnalysis,
-        meta: { fallback: true, reason: 'timeout' },
+    console.error('[AI API] fatal fallback recovery', error)
+    if (recoveryProperty) {
+      return buildFallbackResponse(recoveryProperty, recoveryMarketData, 'fatal-handler-recovery', {
+        error: error instanceof Error ? error.message : String(error),
       })
     }
 
-    console.error('[AI ANALYSIS FATAL]', error)
-    const fallbackAnalysis = normalizeAnalysis({}, property, marketData)
-    return sendJson(200, {
-      ok: true,
-      analysis: fallbackAnalysis,
-      meta: { fallback: true, reason: 'fatal-error', error: error instanceof Error ? error.message : String(error) },
-    })
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId)
-    }
+    return sendJson(500, { ok: false, error: 'Fatal handler error before property validation.' })
   }
 }
