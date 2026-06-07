@@ -1,13 +1,11 @@
-export default async function handler(request: Request): Promise<Response> {
-  if (request.method !== 'GET' && request.method !== 'POST') {
-    return new Response(JSON.stringify({ ok: false, error: 'Method not allowed.' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    })
+export default function handler(
+  req: { method?: string },
+  res: { status: (code: number) => { json: (payload: unknown) => void } },
+): void {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.status(405).json({ ok: false, error: 'Method not allowed.' })
+    return
   }
 
-  return new Response(JSON.stringify({ ok: true, message: 'deal-analysis function alive' }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  res.status(200).json({ ok: true, message: 'deal-analysis function alive' })
 }
