@@ -106,25 +106,12 @@ export function NewOpportunityPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
 
-    console.info('[new-opportunity] submit check', {
-      authUserId: user?.id ?? null,
-      organizationId: organization?.id ?? null,
-      profileId: profile?.id ?? null,
-      profileOrganizationId: profile?.organization_id ?? null,
-    })
-
     if (!user?.id || !organization?.id) {
-      console.error('[new-opportunity] blocked: missing user or organization', {
-        hasUser: Boolean(user?.id),
-        hasOrganization: Boolean(organization?.id),
-        profileOrganizationId: profile?.organization_id ?? null,
-      })
       toast.error('Your account does not have an active organization yet.')
       return
     }
 
     setIsSaving(true)
-    console.info('[new-opportunity] create started')
 
     try {
       const payload = toPayload(formData)
@@ -137,7 +124,6 @@ export function NewOpportunityPage() {
           profileId: profile?.id,
         })
         opportunityId = result.opportunityId
-        console.info('[new-opportunity] create succeeded', { opportunityId })
       } catch (createError) {
         throw new Error(createError instanceof Error ? createError.message : 'Failed to create opportunity.')
       }
@@ -145,7 +131,6 @@ export function NewOpportunityPage() {
       try {
         navigate(`/opportunities/${opportunityId}`)
       } catch (navigateError) {
-        console.error('[new-opportunity] navigate failed', navigateError)
         throw new Error('Opportunity was created, but redirect failed. Please open it from My Opportunities.')
       }
 
@@ -181,7 +166,6 @@ export function NewOpportunityPage() {
       }
     } finally {
       setIsSaving(false)
-      console.info('[new-opportunity] submit finished')
     }
   }
 

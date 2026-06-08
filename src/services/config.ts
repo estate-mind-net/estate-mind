@@ -26,6 +26,9 @@ export const API_CONFIG = {
   marketData: {
     provider: import.meta.env.VITE_MARKET_DATA_PROVIDER || 'mock',
   },
+  webSearch: {
+    provider: import.meta.env.VITE_WEB_SEARCH_PROVIDER || 'tavily',
+  },
 } as const
 
 export const isProduction = () => API_CONFIG.app.environment === 'production'

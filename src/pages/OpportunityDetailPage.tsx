@@ -397,6 +397,119 @@ export function OpportunityDetailPage() {
         </div>
       </div>
 
+        <Card className="border-border/70 p-6">
+          <div className="flex items-center gap-2">
+            <TrendUp className="h-5 w-5 text-accent" weight="duotone" />
+            <h2 className="font-display text-xl font-bold">AI Snapshot</h2>
+          </div>
+
+          {isPollingAnalysis && !latestAnalysis ? (
+            <div className="mt-5 flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
+              <CircleNotch className="h-4 w-4 animate-spin flex-shrink-0" />
+              <span>Running AI analysis... this usually takes 10-20 seconds.</span>
+            </div>
+          ) : null}
+
+          {latestAnalysis ? (
+            <div className="mt-5 space-y-4">
+              <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <Badge variant="outline" className="border-accent/40 text-accent">
+                    {snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)}
+                  </Badge>
+                  <ScoreGauge score={snapshotDecision?.score ?? latestAnalysis.score.overall} size="sm" showLabel={false} />
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <InfoBlock label="Recommendation" value={snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)} />
+                  <InfoBlock label="Investment Score" value={`${snapshotDecision?.score ?? latestAnalysis.score.overall}/100`} />
+                  <InfoBlock label="Confidence" value={snapshotDecision?.confidence ?? confidenceLevel ?? 'Medium'} />
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate?.monthly ?? item.expectedMonthlyRent)} />
+                <InfoBlock label="Rental Yield" value={`${safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)}%`} />
+                <InfoBlock label="Airbnb Yield" value={`${safeNumber(latestAnalysis.airbnbPotential?.percentage, 0)}%`} />
+                <InfoBlock label="ROI Estimate" value={`${(safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0) + safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)).toFixed(2)}%`} />
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+                <p className="mb-2 font-semibold">Scenario Analysis</p>
+                <table className="min-w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border/50 text-muted-foreground">
+                      <th className="px-2 py-1">Scenario</th>
+                      <th className="px-2 py-1">Rent</th>
+                      <th className="px-2 py-1">Yield</th>
+                      <th className="px-2 py-1">Annual ROI</th>
+                      <th className="px-2 py-1">5Y ROI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snapshotScenarios ? [
+                      ['Conservative', snapshotScenarios.conservative],
+                      ['Base', snapshotScenarios.base],
+                      ['Optimistic', snapshotScenarios.optimistic],
+                    ].map(([label, row]) => (
+                      <tr key={label} className="border-b border-border/30">
+                        <td className="px-2 py-1 font-medium">{label}</td>
+                        <td className="px-2 py-1">{formatCurrency(item.currency, (row as typeof snapshotScenarios.base).monthlyRent)}</td>
+                        <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).rentalYield}%</td>
+                        <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).annualROI}%</td>
+                        <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).projectedRoi5Year}%</td>
+                      </tr>
+                    )) : null}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                  <p className="font-semibold">Reasons to Invest</p>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    {(snapshotThesis?.reasonsToInvest ?? latestAnalysis.opportunities).slice(0, 3).map((reason) => (
+                      <li key={reason}>• {takeShortSentence(reason)}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
+                  <p className="font-semibold">Key Risks</p>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    {(snapshotThesis?.risks ?? latestAnalysis.risks).slice(0, 3).map((risk) => (
+                      <li key={risk}>• {takeShortSentence(risk)}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm sm:col-span-2">
+                  <p className="font-semibold">Upside Opportunities</p>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    {(snapshotThesis?.upsideOpportunities ?? latestAnalysis.opportunities).slice(0, 3).map((upside) => (
+                      <li key={upside}>• {takeShortSentence(upside)}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm sm:col-span-2">
+                  <p className="font-semibold">Due Diligence Checklist</p>
+                  <ul className="mt-2 space-y-1 text-muted-foreground">
+                    {snapshotChecklist.slice(0, 6).map((check) => (
+                      <li key={check}>• {takeShortSentence(check)}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Button className="w-full" onClick={() => navigate(`/opportunities/${item.id}/report`)}>
+                  View Full Investment Report
+                </Button>
+                <p className="text-xs text-muted-foreground">Full Investment Reports are part of the Pro workflow.</p>
+              </div>
+            </div>
+          ) : !isPollingAnalysis ? (
+            <p className="mt-5 text-sm text-muted-foreground">AI analysis is not available for this opportunity yet.</p>
+          ) : null}
+        </Card>
+
       <div className="grid gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2 border-border/70 bg-gradient-to-br from-card via-card to-accent/5 p-6">
           <div className="flex items-center gap-2">
@@ -452,119 +565,6 @@ export function OpportunityDetailPage() {
 
           <Card className="border-border/70 p-6">
             <div className="flex items-center gap-2">
-              <TrendUp className="h-5 w-5 text-accent" weight="duotone" />
-              <h2 className="font-display text-xl font-bold">AI Snapshot</h2>
-            </div>
-
-            {isPollingAnalysis && !latestAnalysis ? (
-              <div className="mt-5 flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
-                <CircleNotch className="h-4 w-4 animate-spin flex-shrink-0" />
-                <span>Running AI analysis… this usually takes 10–20 seconds.</span>
-              </div>
-            ) : null}
-
-            {latestAnalysis ? (
-              <div className="mt-5 space-y-4">
-                <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <Badge variant="outline" className="border-accent/40 text-accent">
-                      {snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)}
-                    </Badge>
-                    <ScoreGauge score={snapshotDecision?.score ?? latestAnalysis.score.overall} size="sm" showLabel={false} />
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <InfoBlock label="Recommendation" value={snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)} />
-                    <InfoBlock label="Investment Score" value={`${snapshotDecision?.score ?? latestAnalysis.score.overall}/100`} />
-                    <InfoBlock label="Confidence" value={snapshotDecision?.confidence ?? confidenceLevel ?? 'Medium'} />
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate?.monthly ?? item.expectedMonthlyRent)} />
-                  <InfoBlock label="Rental Yield" value={`${safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)}%`} />
-                  <InfoBlock label="ROI Estimate" value={`${(safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0) + safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)).toFixed(2)}%`} />
-                  <InfoBlock label="5Y Appreciation" value={`${safeNumber(latestAnalysis.appreciationPotential?.fiveYear, 0)}%`} />
-                </div>
-
-                <div className="overflow-x-auto rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
-                  <p className="mb-2 font-semibold">Scenario Analysis</p>
-                  <table className="min-w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-border/50 text-muted-foreground">
-                        <th className="px-2 py-1">Scenario</th>
-                        <th className="px-2 py-1">Rent</th>
-                        <th className="px-2 py-1">Yield</th>
-                        <th className="px-2 py-1">Annual ROI</th>
-                        <th className="px-2 py-1">5Y ROI</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {snapshotScenarios ? [
-                        ['Conservative', snapshotScenarios.conservative],
-                        ['Base', snapshotScenarios.base],
-                        ['Optimistic', snapshotScenarios.optimistic],
-                      ].map(([label, row]) => (
-                        <tr key={label} className="border-b border-border/30">
-                          <td className="px-2 py-1 font-medium">{label}</td>
-                          <td className="px-2 py-1">{formatCurrency(item.currency, (row as typeof snapshotScenarios.base).monthlyRent)}</td>
-                          <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).rentalYield}%</td>
-                          <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).annualROI}%</td>
-                          <td className="px-2 py-1">{(row as typeof snapshotScenarios.base).projectedRoi5Year}%</td>
-                        </tr>
-                      )) : null}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
-                    <p className="font-semibold">Reasons to Invest</p>
-                    <ul className="mt-2 space-y-1 text-muted-foreground">
-                      {(snapshotThesis?.reasonsToInvest ?? latestAnalysis.opportunities).slice(0, 3).map((reason) => (
-                        <li key={reason}>• {takeShortSentence(reason)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
-                    <p className="font-semibold">Key Risks</p>
-                    <ul className="mt-2 space-y-1 text-muted-foreground">
-                      {(snapshotThesis?.risks ?? latestAnalysis.risks).slice(0, 3).map((risk) => (
-                        <li key={risk}>• {takeShortSentence(risk)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm sm:col-span-2">
-                    <p className="font-semibold">Upside Opportunities</p>
-                    <ul className="mt-2 space-y-1 text-muted-foreground">
-                      {(snapshotThesis?.upsideOpportunities ?? latestAnalysis.opportunities).slice(0, 3).map((upside) => (
-                        <li key={upside}>• {takeShortSentence(upside)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm sm:col-span-2">
-                    <p className="font-semibold">Due Diligence Checklist</p>
-                    <ul className="mt-2 space-y-1 text-muted-foreground">
-                      {snapshotChecklist.slice(0, 6).map((check) => (
-                        <li key={check}>• {takeShortSentence(check)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Button className="w-full" onClick={() => navigate(`/opportunities/${item.id}/report`)}>
-                    View Full Investment Report
-                  </Button>
-                  <p className="text-xs text-muted-foreground">Full Investment Reports are part of the Pro workflow.</p>
-                </div>
-              </div>
-            ) : !isPollingAnalysis ? (
-              <p className="mt-5 text-sm text-muted-foreground">AI analysis is not available for this opportunity yet.</p>
-            ) : null}
-          </Card>
-
-          <Card className="border-border/70 p-6">
-            <div className="flex items-center gap-2">
               <ClockCounterClockwise className="h-5 w-5 text-accent" weight="duotone" />
               <h2 className="font-display text-xl font-bold">Stage History</h2>
             </div>
@@ -584,34 +584,35 @@ export function OpportunityDetailPage() {
             </div>
           </Card>
 
-          <Card className="border-border/70 p-6">
-            <div className="flex items-center gap-2">
-              <Sparkle className="h-5 w-5 text-accent" weight="duotone" />
-              <h2 className="font-display text-xl font-bold">AI Notes</h2>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {item.notes.length === 0 && isPollingAnalysis ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CircleNotch className="h-4 w-4 animate-spin flex-shrink-0" />
-                  <span>Waiting for AI notes…</span>
-                </div>
-              ) : item.notes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No AI notes yet.</p>
-              ) : (
-                item.notes.map((note) => (
-                  <div key={note.id} className="rounded-xl border border-border/60 bg-background/60 p-4">
-                    <p className="text-xs text-muted-foreground">{formatDate(note.createdAt)}</p>
-                    <p className="mt-2 text-sm leading-6 text-foreground/80">
-                      {note.parsedAnalysis?.executiveSummary ?? note.content}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
         </div>
       </div>
+
+      <Card className="border-border/70 p-6">
+        <div className="flex items-center gap-2">
+          <Sparkle className="h-5 w-5 text-accent" weight="duotone" />
+          <h2 className="font-display text-xl font-bold">AI Notes</h2>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {item.notes.length === 0 && isPollingAnalysis ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CircleNotch className="h-4 w-4 animate-spin flex-shrink-0" />
+              <span>Waiting for AI notes...</span>
+            </div>
+          ) : item.notes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No AI notes yet.</p>
+          ) : (
+            item.notes.map((note) => (
+              <div key={note.id} className="rounded-xl border border-border/60 bg-background/60 p-4">
+                <p className="text-xs text-muted-foreground">{formatDate(note.createdAt)}</p>
+                <p className="mt-2 text-sm leading-6 text-foreground/80">
+                  {note.parsedAnalysis?.executiveSummary ?? note.content}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
     </div>
   )
 }

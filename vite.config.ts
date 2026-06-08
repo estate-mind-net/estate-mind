@@ -6,6 +6,7 @@ import sparkPlugin from "@github/spark/spark-vite-plugin";
 import createIconImportProxy from "@github/spark/vitePhosphorIconProxyPlugin";
 import { resolve } from 'path'
 import { handleDealAnalysisRequest } from './src/lib/server/dealAnalysisHandler'
+import { handleDiscoveryRunHttp } from './src/lib/server/discoveryRunHandler'
 
 const projectRoot = process.env.PROJECT_ROOT || import.meta.dirname
 
@@ -83,11 +84,60 @@ const dealAnalysisDevMiddleware = (): PluginOption => ({
   },
 })
 
+const discoveryRunDevMiddleware = (): PluginOption => ({
+  name: 'discovery-run-dev-middleware',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      const path = (req.url ?? '').split('?')[0]
+      if (path !== '/api/discovery/run') {
+        next()
+        return
+      }
+
+      console.log('[DISCOVERY ROUTE HIT]', {
+        runtime: 'vite-dev-middleware',
+        method: req.method ?? 'UNKNOWN',
+        url: req.url ?? '/api/discovery/run',
+      })
+
+      try {
+        const method = req.method ?? 'GET'
+        const hasBody = method !== 'GET' && method !== 'HEAD'
+        const bodyText = hasBody ? await readRequestBody(req as unknown as { on: Function }) : ''
+
+        let parsedBody: unknown = undefined
+        if (hasBody) {
+          try {
+            parsedBody = bodyText ? JSON.parse(bodyText) : {}
+          } catch {
+            parsedBody = {}
+          }
+        }
+
+        const { status, body } = await handleDiscoveryRunHttp(method, parsedBody)
+
+        res.statusCode = status
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify(body))
+      } catch (error) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : 'Internal server error in Vite middleware.',
+        }))
+      }
+    })
+  },
+})
+
 // https://vite.dev/config/
 export default defineConfig({
   envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   plugins: [
     dealAnalysisDevMiddleware(),
+    discoveryRunDevMiddleware(),
     react(),
     tailwindcss(),
     // DO NOT REMOVE

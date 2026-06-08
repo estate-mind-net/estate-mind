@@ -46,6 +46,7 @@ export function AppNavigation() {
               <Button asChild variant="ghost" size="sm"><Link to="/dashboard"><House className="mr-1 h-4 w-4" />Dashboard</Link></Button>
               <Button asChild variant="ghost" size="sm"><Link to="/portfolio"><ChartPieSlice className="mr-1 h-4 w-4" />Portfolio</Link></Button>
               <Button asChild variant="ghost" size="sm"><Link to="/opportunities"><Buildings className="mr-1 h-4 w-4" />Opportunities</Link></Button>
+              <Button asChild variant="ghost" size="sm"><Link to="/opportunity-hunter"><Brain className="mr-1 h-4 w-4" />Hunter</Link></Button>
               <Button asChild variant="ghost" size="sm"><Link to="/reports"><ChartLine className="mr-1 h-4 w-4" />Reports</Link></Button>
               <Button asChild variant="ghost" size="sm"><Link to="/settings"><Gear className="mr-1 h-4 w-4" />Settings</Link></Button>
               <Button variant="ghost" size="sm" onClick={handleLogout}><SignOut className="mr-1 h-4 w-4" />Logout</Button>
@@ -75,6 +76,9 @@ export function AppNavigation() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate('/opportunities')}>
                   Opportunities
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/opportunity-hunter')}>
+                  Opportunity Hunter
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate('/reports')}>
                   Reports

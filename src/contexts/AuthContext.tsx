@@ -14,12 +14,6 @@ interface AuthUser {
   email?: string
 }
 
-const logAuthOrgDebug = (message: string, payload?: unknown) => {
-  if (import.meta.env.DEV) {
-    console.info(`[auth-org] ${message}`, payload)
-  }
-}
-
 const extractErrorMessage = (error: unknown): string => {
   if (error && typeof error === "object" && "message" in error) {
     return String((error as { message?: unknown }).message ?? "Unknown error")
@@ -44,7 +38,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     // profiles.id is the auth user id in this schema, so query by id.
-    console.info("[auth-org] resolving profile", { authUserId: userId })
 
     const { data: profileData, error: profileError } = await client
       .from("profiles")
@@ -53,18 +46,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       .maybeSingle()
 
     if (profileError) {
-      logAuthOrgDebug("profile query failed", { userId, error: profileError })
+      console.error("[auth-org] profile query failed", { userId, error: profileError })
     }
 
     const nextProfile = (profileData as Profile | null) ?? null
     setProfile(nextProfile)
-
-    console.info("[auth-org] profile resolved", {
-      authUserId: userId,
-      profileId: nextProfile?.id ?? null,
-      profileOrganizationId: nextProfile?.organization_id ?? null,
-      profileRole: nextProfile?.role ?? null,
-    })
 
     // Resolve organization_id: prefer profiles.organization_id, fall back to organization_members.
     let resolvedOrgId: string | null = nextProfile?.organization_id ?? null
@@ -78,14 +64,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .maybeSingle()
 
       if (memberError) {
-        logAuthOrgDebug("organization_members fallback failed", { userId, error: memberError })
+        console.error("[auth-org] organization_members fallback failed", { userId, error: memberError })
       }
 
       resolvedOrgId = (memberRow as { organization_id: string } | null)?.organization_id ?? null
-      logAuthOrgDebug("organization_members fallback", { userId, resolvedOrgId })
     }
-
-    console.info("[auth-org] resolved org id", { authUserId: userId, resolvedOrgId })
 
     if (resolvedOrgId) {
       const { data: organizationData, error: organizationError } = await client
@@ -93,13 +76,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .select("id,name,type,created_at")
         .eq("id", resolvedOrgId)
         .maybeSingle()
-
-      console.info("[auth-org] organization query result", {
-        authUserId: userId,
-        resolvedOrgId,
-        organizationId: (organizationData as { id?: string } | null)?.id ?? null,
-        error: organizationError ?? null,
-      })
 
       if (organizationData) {
         setOrganization(organizationData as Organization)
@@ -111,7 +87,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     }
 
-    console.warn("[auth-org] no organization resolved", { authUserId: userId, resolvedOrgId })
     setOrganization(null)
   }
 

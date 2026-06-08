@@ -25,6 +25,9 @@ import { NewOpportunityPage } from '@/pages/NewOpportunityPage'
 import { OpportunityDetailPage } from '@/pages/OpportunityDetailPage'
 import { OpportunityInvestmentReportPage } from '@/pages/OpportunityInvestmentReportPage'
 import { PropertyComparisonPage } from '@/pages/PropertyComparisonPage'
+import { OpportunityHunterDashboardPage } from '@/pages/OpportunityHunterDashboardPage'
+import { OpportunityHunterFormPage } from '@/pages/OpportunityHunterFormPage'
+import { OpportunityHunterDetailPage } from '@/pages/OpportunityHunterDetailPage'
 import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
@@ -91,6 +94,7 @@ function App() {
       'founding-partner-presentation': '/presentation/founding-partner',
       reports: '/reports',
       compare: '/compare',
+      'opportunity-hunter': '/opportunity-hunter',
     }
 
     navigate(routeMap[page] ?? '/')
@@ -229,6 +233,10 @@ function App() {
           <Route path="/reports" element={<WorkspaceShell><ReportsContent /></WorkspaceShell>} />
           <Route path="/compare" element={<WorkspaceShell><PropertyComparisonPage /></WorkspaceShell>} />
           <Route path="/settings" element={<WorkspaceShell><SettingsPage /></WorkspaceShell>} />
+          <Route path="/opportunity-hunter" element={<WorkspaceShell><OpportunityHunterDashboardPage /></WorkspaceShell>} />
+          <Route path="/opportunity-hunter/new" element={<WorkspaceShell><OpportunityHunterFormPage /></WorkspaceShell>} />
+          <Route path="/opportunity-hunter/:id" element={<WorkspaceShell><OpportunityHunterDetailPage /></WorkspaceShell>} />
+          <Route path="/opportunity-hunter/:id/edit" element={<WorkspaceShell><OpportunityHunterFormPage /></WorkspaceShell>} />
 
           <Route path="/analyzer" element={<WorkspaceShell><DealAnalyzer onAnalyze={handleAnalyze} /></WorkspaceShell>} />
           <Route

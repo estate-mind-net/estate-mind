@@ -455,14 +455,11 @@ export class OpportunityWorkspaceService {
       content: JSON.stringify(this.buildAiNoteContent(analysis)),
     }
 
-    console.log('[AI NOTE] saving', payload)
     const insertResult = await client.from('notes').insert([payload])
     if (insertResult.error) {
       console.error('[AI NOTE] failed', insertResult.error)
       throw new Error(insertResult.error.message ?? insertResult.error.details ?? 'Failed to persist AI note.')
     }
-
-    console.log('[AI NOTE] saved successfully')
   }
 
   private async insertProperty(
@@ -603,14 +600,6 @@ export class OpportunityWorkspaceService {
     }
 
     const createdBy = context.userId || context.profileId || null
-
-    console.info('[opportunity-workspace] createOpportunity', {
-      organizationId: context.organizationId,
-      userId: context.userId,
-      profileId: context.profileId ?? null,
-      createdBy,
-      title: input.title,
-    })
 
     const propertyId = await this.insertProperty(context.organizationId, createdBy, input)
 

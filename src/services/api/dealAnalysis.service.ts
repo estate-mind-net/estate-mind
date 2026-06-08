@@ -20,7 +20,6 @@ export async function generateDealAnalysis(property: Property): Promise<Investme
 
   try {
     const url = new URL('/api/deal-analysis', window.location.origin).toString()
-    console.log('[AI REQUEST URL]', url)
 
     timeoutId = setTimeout(() => {
       controller.abort()
@@ -45,17 +44,6 @@ export async function generateDealAnalysis(property: Property): Promise<Investme
     if (!response.ok || !payload || !payload.ok) {
       const reason = payload && !payload.ok && payload.error ? payload.error : `Request failed with status ${response.status}`
       throw new Error(reason)
-    }
-
-    if (import.meta.env.DEV) {
-      console.debug('[deal-analysis-ui] api score fields', {
-        score: payload.analysis.score,
-        overallScore: (payload.analysis as InvestmentAnalysis & Record<string, unknown>).overallScore,
-        investmentScore: (payload.analysis as InvestmentAnalysis & Record<string, unknown>).investmentScore,
-        metrics: (payload.analysis as InvestmentAnalysis & Record<string, unknown>).metrics,
-        confidence: (payload.analysis as InvestmentAnalysis & Record<string, unknown>).confidence,
-        confidenceLevel: (payload.analysis as InvestmentAnalysis & Record<string, unknown>).confidenceLevel,
-      })
     }
 
     return payload.analysis
