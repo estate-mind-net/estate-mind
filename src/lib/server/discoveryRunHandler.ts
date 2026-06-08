@@ -27,9 +27,14 @@ export type DiscoveryRunSuccessResponse = {
 export type DiscoveryRunErrorResponse = {
   success: false
   error: string
+  stack?: string
 }
 
 export type DiscoveryRunApiResponse = DiscoveryRunSuccessResponse | DiscoveryRunErrorResponse
+
+const isDevelopment = (): boolean => {
+  return process.env.NODE_ENV !== 'production'
+}
 
 const parsePayload = (payload: unknown): DiscoveryRunRequestPayload => {
   if (!payload) return {}
@@ -298,6 +303,17 @@ const loadDiscoveryInputs = async (organizationId: string): Promise<{
   }
 }
 
+const formatError = (error: unknown): DiscoveryRunErrorResponse => {
+  const normalized = error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Discovery run failed.')
+  console.error('[DISCOVERY ERROR]', error)
+
+  return {
+    success: false,
+    error: normalized.message,
+    ...(isDevelopment() ? { stack: normalized.stack ?? '' } : {}),
+  }
+}
+
 export async function executeDiscoveryRun(payloadInput: unknown): Promise<DiscoveryRunSuccessResponse> {
   const payload = parsePayload(payloadInput)
   const mode = payload.mode ?? 'manual'
@@ -306,8 +322,35 @@ export async function executeDiscoveryRun(payloadInput: unknown): Promise<Discov
   const repo = buildRepository()
   const results: Array<Record<string, unknown>> = []
 
+  console.log('[DISCOVERY CONFIG]', {
+    mode,
+    organizationId: payload.organizationId ?? 'all',
+    activeOrganizations: organizations.length,
+  })
+
   for (const organizationId of organizations) {
     const { briefs, sources } = await loadDiscoveryInputs(organizationId)
+
+    console.log('[DISCOVERY CONFIG]', {
+      organizationId,
+      activeBriefs: briefs.length,
+      activeSources: sources.length,
+    })
+
+    for (const source of sources) {
+      const sourceType = source.type
+      const provider = source.connector_config && typeof source.connector_config === 'object' && 'provider' in source.connector_config
+        ? String((source.connector_config as Record<string, unknown>).provider ?? 'default')
+        : 'default'
+
+      console.log('[DISCOVERY CONFIG]', {
+        organizationId,
+        sourceId: source.id,
+        sourceName: source.name,
+        sourceType,
+        provider,
+      })
+    }
 
     for (const brief of briefs) {
       for (const source of sources) {
@@ -391,34 +434,9 @@ export async function handleDiscoveryRunHttp(method: string | undefined, payload
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Discovery run failed.'
 
-    if (message.includes('Supabase service credentials are missing for discovery runner.')) {
-      return {
-        status: 200,
-        body: {
-          success: true,
-          message: 'Discovery executed',
-          matchesFound: 0,
-          summary: {
-            organizationId: 'all',
-            mode: 'manual',
-            totalRuns: 0,
-            totalFetched: 0,
-            totalInserted: 0,
-            totalDeduplicated: 0,
-            totalMatched: 0,
-            failedRuns: 0,
-          },
-          results: [],
-        },
-      }
-    }
-
     return {
       status: 500,
-      body: {
-        success: false,
-        error: message,
-      },
+      body: formatError(error),
     }
   }
 }

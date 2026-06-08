@@ -47,7 +47,9 @@ const toArray = (value: unknown): string[] => {
 }
 
 const parseConfig = (input: ConnectorInput): WebSearchConfig => {
-  const config = input.source.connector_config
+  const config = input.source.connector_config && typeof input.source.connector_config === 'object'
+    ? input.source.connector_config
+    : {}
   const allowedDomains = toArray(config.allowed_domains)
   const excludedDomains = toArray(config.excluded_domains)
   const maxRaw = Number(config.max_results_per_run)
@@ -336,12 +338,24 @@ export class WebSearchConnector implements OpportunityConnector {
 
   async fetchOpportunities(input: ConnectorInput): Promise<RawOpportunity[]> {
     const apiKey = process.env.WEB_SEARCH_API_KEY ?? ''
+    const config = parseConfig(input)
+    const provider = resolveProvider(input, config)
+
+    console.log('[WEB SEARCH CONFIG]', {
+      provider: provider.name,
+      apiKeyExists: Boolean(apiKey),
+      allowedDomains: config.allowedDomains.length,
+      excludedDomains: config.excludedDomains.length,
+      maxResultsPerRun: config.maxResultsPerRun,
+      sourceType: input.source.type,
+      sourceName: input.source.name,
+      briefTitle: input.brief.title,
+    })
+
     if (!apiKey) {
       throw new Error('WEB_SEARCH_API_KEY is not configured for web_search source.')
     }
 
-    const config = parseConfig(input)
-    const provider = resolveProvider(input, config)
     const queries = buildQueries(input)
 
     const perQueryMax = Math.max(2, Math.min(10, Math.ceil(config.maxResultsPerRun / Math.max(1, queries.length))))
