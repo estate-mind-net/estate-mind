@@ -16,6 +16,19 @@ type MatchRow = OpportunityMatch
 type RawRow = RawOpportunity
 type RunRow = SourceConnectorRun
 type AlertRow = DiscoveryAlert
+type SourceHealthStatus = 'ONLINE' | 'OFFLINE' | 'ERROR' | 'CONFIGURATION_INCOMPLETE'
+
+export type OpportunityHunterCleanupAction =
+  | 'failed_runs'
+  | 'rejected_raw_opportunities'
+  | 'unmatched_raw_opportunities'
+  | 'duplicate_demo_briefs'
+  | 'all_demo_briefs'
+  | 'all_test_data'
+  | 'old_discovery_runs'
+  | 'old_raw_opportunities'
+
+export type OpportunityHunterCleanupPreview = Record<OpportunityHunterCleanupAction, number>
 
 export interface OpportunityHunterDashboardData {
   activeBriefs: InvestmentSearchBrief[]
@@ -25,17 +38,104 @@ export interface OpportunityHunterDashboardData {
   sourceHealth: Array<{
     source: OpportunitySource
     lastRun: SourceConnectorRun | null
-    health: 'healthy' | 'degraded' | 'offline'
+    health: SourceHealthStatus
+    reason: string
   }>
+}
+
+export interface OpportunityHunterRunDetailData {
+  run: SourceConnectorRun
+  source: OpportunitySource | null
+  brief: InvestmentSearchBrief | null
+  extractedOpportunities: RawOpportunity[]
 }
 
 const toArray = <T>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : [])
 
-const mapHealth = (run: SourceConnectorRun | null): 'healthy' | 'degraded' | 'offline' => {
-  if (!run) return 'offline'
-  if (run.status === 'failed') return 'offline'
-  if (run.status === 'partial') return 'degraded'
-  return 'healthy'
+const chunk = <T>(items: T[], size = 100): T[][] => {
+  const chunks: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size))
+  }
+  return chunks
+}
+
+const isRejectedRawCandidate = (row: RawOpportunity): boolean => {
+  const title = row.title.toLowerCase()
+  const city = (row.city ?? '').trim().toLowerCase()
+  const url = (row.source_url ?? '').toLowerCase()
+  const rawPayload = row.raw_payload ?? {}
+  const classification = typeof rawPayload.page_classification === 'string' ? rawPayload.page_classification : ''
+
+  return /\b(agency|agencija|blog|cookie|privacy)\b/.test(title)
+    || url.includes('/blog/')
+    || city.length === 0
+    || city === 'unknown city'
+    || city === 'unknown'
+    || row.price == null
+    || row.price <= 0
+    || !row.property_type
+    || classification === 'category_page'
+    || classification === 'search_results_page'
+    || classification === 'agency_homepage'
+    || classification === 'irrelevant'
+}
+
+const firstRunError = (run: SourceConnectorRun | null): string | null => {
+  if (!run) return null
+  const metadata = run.metadata ?? {}
+  const errors = Array.isArray(metadata.errors)
+    ? metadata.errors.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+  return errors[0] ?? run.error_message ?? null
+}
+
+const mapFailureReason = (run: SourceConnectorRun | null): string => {
+  const metadata = run?.metadata ?? {}
+  const code = typeof metadata.reason_code === 'string' ? metadata.reason_code : ''
+  const message = firstRunError(run) ?? ''
+
+  if (code === 'source_disabled') return 'Source disabled'
+  if (code === 'source_skipped') return 'Source skipped because terms were not checked'
+  if (code === 'source_skipped_no_active_briefs') return 'No active briefs available for discovery'
+  if (message.includes('WEB_SEARCH_API_KEY')) {
+    return message.includes('invalid') ? 'WEB_SEARCH_API_KEY invalid' : 'WEB_SEARCH_API_KEY missing'
+  }
+  if (/provider .*failed|tavily failed|serpapi failed/i.test(message)) {
+    return 'Provider health check failed'
+  }
+
+  return message || 'Connector run failed'
+}
+
+const mapHealth = (source: OpportunitySource, run: SourceConnectorRun | null): { health: SourceHealthStatus; reason: string } => {
+  if (!source.is_enabled) {
+    return { health: 'OFFLINE', reason: 'Source disabled' }
+  }
+
+  if (!source.terms_checked) {
+    return { health: 'CONFIGURATION_INCOMPLETE', reason: 'Terms & conditions have not been accepted.' }
+  }
+
+  if (!run) {
+    return { health: 'OFFLINE', reason: 'No successful connector run yet' }
+  }
+
+  if (run.status === 'failed') {
+    const metadata = run.metadata ?? {}
+    const reasonCode = typeof metadata.reason_code === 'string' ? metadata.reason_code : ''
+    if (reasonCode === 'source_disabled' || reasonCode === 'source_skipped' || reasonCode === 'source_skipped_no_active_briefs') {
+      return { health: 'OFFLINE', reason: mapFailureReason(run) }
+    }
+
+    return { health: 'ERROR', reason: mapFailureReason(run) }
+  }
+
+  if (run.status === 'partial') {
+    return { health: 'ONLINE', reason: 'Last connector run completed with warnings' }
+  }
+
+  return { health: 'ONLINE', reason: 'Last connector run succeeded' }
 }
 
 export class OpportunityHunterService {
@@ -124,6 +224,313 @@ export class OpportunityHunterService {
 
     if (error || !data) throw new Error(error?.message ?? 'Failed to create source.')
     return data as SourceRow
+  }
+
+  async updateSource(
+    organizationId: string,
+    sourceId: string,
+    input: Partial<Omit<OpportunitySource, 'id' | 'organization_id' | 'created_at' | 'updated_at' | 'last_run_at'>>,
+  ): Promise<OpportunitySource> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { data, error } = await client
+      .from('opportunity_sources')
+      .update(input)
+      .eq('organization_id', organizationId)
+      .eq('id', sourceId)
+      .select('*')
+      .single()
+
+    if (error || !data) throw new Error(error?.message ?? 'Failed to update source.')
+    return data as SourceRow
+  }
+
+  async deleteSearchBrief(organizationId: string, id: string): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { data, error } = await client
+      .from('investment_search_briefs')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('id', id)
+      .select('id')
+
+    if (error) throw new Error(error.message)
+    return toArray(data as Array<{ id: string }>).length
+  }
+
+  async deleteSource(organizationId: string, id: string): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { data, error } = await client
+      .from('opportunity_sources')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('id', id)
+      .select('id')
+
+    if (error) throw new Error(error.message)
+    return toArray(data as Array<{ id: string }>).length
+  }
+
+  async deleteDiscoveryRun(organizationId: string, id: string): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { data, error } = await client
+      .from('source_connector_runs')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('id', id)
+      .select('id')
+
+    if (error) throw new Error(error.message)
+    return toArray(data as Array<{ id: string }>).length
+  }
+
+  async deleteRawOpportunity(organizationId: string, id: string): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { data, error } = await client
+      .from('raw_opportunities')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('id', id)
+      .select('id')
+
+    if (error) throw new Error(error.message)
+    return toArray(data as Array<{ id: string }>).length
+  }
+
+  async deleteOpportunityMatch(organizationId: string, id: string): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { data, error } = await client
+      .from('opportunity_matches')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('id', id)
+      .select('id')
+
+    if (error) throw new Error(error.message)
+    return toArray(data as Array<{ id: string }>).length
+  }
+
+  private async countRows(table: string, organizationId: string, apply?: (query: any) => any): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) return 0
+
+    let query = client.from(table).select('id', { count: 'exact', head: true }).eq('organization_id', organizationId)
+    if (apply) query = apply(query)
+    const { count, error } = await query
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }
+
+  private async deleteRows(table: string, organizationId: string, apply?: (query: any) => any): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    let query = client.from(table).delete().eq('organization_id', organizationId).select('id')
+    if (apply) query = apply(query)
+    const { data, error } = await query
+    if (error) throw new Error(error.message)
+    return toArray(data as Array<{ id: string }>).length
+  }
+
+  private async getMatchedRawIds(organizationId: string): Promise<Set<string>> {
+    const client = getSupabaseClient()
+    if (!client) return new Set()
+
+    const { data, error } = await client
+      .from('opportunity_matches')
+      .select('raw_opportunity_id')
+      .eq('organization_id', organizationId)
+
+    if (error) throw new Error(error.message)
+    return new Set(toArray(data as Array<{ raw_opportunity_id: string }>).map((row) => row.raw_opportunity_id).filter(Boolean))
+  }
+
+  private async deleteRawOpportunityIds(organizationId: string, ids: string[]): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+    if (ids.length === 0) return 0
+
+    let deleted = 0
+    for (const idsChunk of chunk(ids)) {
+      const { data, error } = await client
+        .from('raw_opportunities')
+        .delete()
+        .eq('organization_id', organizationId)
+        .in('id', idsChunk)
+        .select('id')
+
+      if (error) throw new Error(error.message)
+      deleted += toArray(data as Array<{ id: string }>).length
+    }
+
+    return deleted
+  }
+
+  private async listRawOpportunitiesForCleanup(organizationId: string): Promise<RawOpportunity[]> {
+    const client = getSupabaseClient()
+    if (!client) return []
+
+    const { data, error } = await client
+      .from('raw_opportunities')
+      .select('*')
+      .eq('organization_id', organizationId)
+
+    if (error) throw new Error(error.message)
+    return toArray(data as RawRow[])
+  }
+
+  private async getRejectedRawOpportunityIds(organizationId: string): Promise<string[]> {
+    const [rawRows, matchedIds] = await Promise.all([
+      this.listRawOpportunitiesForCleanup(organizationId),
+      this.getMatchedRawIds(organizationId),
+    ])
+
+    return rawRows
+      .filter((row) => row.id && !matchedIds.has(row.id) && isRejectedRawCandidate(row))
+      .map((row) => row.id as string)
+  }
+
+  private async getUnmatchedRawOpportunityIds(organizationId: string): Promise<string[]> {
+    const [rawRows, matchedIds] = await Promise.all([
+      this.listRawOpportunitiesForCleanup(organizationId),
+      this.getMatchedRawIds(organizationId),
+    ])
+
+    return rawRows
+      .filter((row) => row.id && !matchedIds.has(row.id))
+      .map((row) => row.id as string)
+  }
+
+  private async getDuplicateDemoBriefIds(organizationId: string): Promise<string[]> {
+    const client = getSupabaseClient()
+    if (!client) return []
+
+    const { data, error } = await client
+      .from('investment_search_briefs')
+      .select('id,title,created_at')
+      .eq('organization_id', organizationId)
+      .ilike('title', 'Demo:%')
+      .order('created_at', { ascending: true })
+
+    if (error) throw new Error(error.message)
+
+    const seen = new Set<string>()
+    const duplicateIds: string[] = []
+    for (const row of toArray(data as Array<{ id: string; title: string }>)) {
+      const key = row.title.trim().toLowerCase()
+      if (seen.has(key)) duplicateIds.push(row.id)
+      seen.add(key)
+    }
+    return duplicateIds
+  }
+
+  private async deleteBriefIds(organizationId: string, ids: string[]): Promise<number> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+    if (ids.length === 0) return 0
+
+    let deleted = 0
+    for (const idsChunk of chunk(ids)) {
+      const { data, error } = await client
+        .from('investment_search_briefs')
+        .delete()
+        .eq('organization_id', organizationId)
+        .in('id', idsChunk)
+        .select('id')
+      if (error) throw new Error(error.message)
+      deleted += toArray(data as Array<{ id: string }>).length
+    }
+    return deleted
+  }
+
+  async cleanupFailedRuns(organizationId: string): Promise<number> {
+    return this.deleteRows('source_connector_runs', organizationId, (query) => query.eq('status', 'failed'))
+  }
+
+  async cleanupRejectedRawOpportunities(organizationId: string): Promise<number> {
+    return this.deleteRawOpportunityIds(organizationId, await this.getRejectedRawOpportunityIds(organizationId))
+  }
+
+  async cleanupUnmatchedRawOpportunities(organizationId: string): Promise<number> {
+    return this.deleteRawOpportunityIds(organizationId, await this.getUnmatchedRawOpportunityIds(organizationId))
+  }
+
+  async cleanupDuplicateDemoBriefs(organizationId: string): Promise<number> {
+    return this.deleteBriefIds(organizationId, await this.getDuplicateDemoBriefIds(organizationId))
+  }
+
+  async cleanupAllDemoBriefs(organizationId: string): Promise<number> {
+    return this.deleteRows('investment_search_briefs', organizationId, (query) => query.ilike('title', 'Demo:%'))
+  }
+
+  async cleanupOldDiscoveryRuns(organizationId: string, days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - Math.max(0, days) * 24 * 60 * 60 * 1000).toISOString()
+    return this.deleteRows('source_connector_runs', organizationId, (query) => query.lt('started_at', cutoff))
+  }
+
+  async cleanupOldRawOpportunities(organizationId: string, days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - Math.max(0, days) * 24 * 60 * 60 * 1000).toISOString()
+    return this.deleteRows('raw_opportunities', organizationId, (query) => query.lt('created_at', cutoff))
+  }
+
+  async cleanupAllOpportunityHunterTestData(organizationId: string): Promise<number> {
+    const deletedMatches = await this.deleteRows('opportunity_matches', organizationId)
+    const deletedAlerts = await this.deleteRows('discovery_alerts', organizationId)
+    const deletedRaw = await this.deleteRows('raw_opportunities', organizationId)
+    const deletedRuns = await this.deleteRows('source_connector_runs', organizationId)
+    const deletedDemoBriefs = await this.cleanupAllDemoBriefs(organizationId)
+    return deletedMatches + deletedAlerts + deletedRaw + deletedRuns + deletedDemoBriefs
+  }
+
+  async previewCleanupCounts(organizationId: string, days: number): Promise<OpportunityHunterCleanupPreview> {
+    const cutoff = new Date(Date.now() - Math.max(0, days) * 24 * 60 * 60 * 1000).toISOString()
+    const [
+      failedRuns,
+      rejectedRawIds,
+      unmatchedRawIds,
+      duplicateDemoIds,
+      allDemoBriefs,
+      oldRuns,
+      oldRaw,
+      matches,
+      alerts,
+      raw,
+      runs,
+    ] = await Promise.all([
+      this.countRows('source_connector_runs', organizationId, (query) => query.eq('status', 'failed')),
+      this.getRejectedRawOpportunityIds(organizationId),
+      this.getUnmatchedRawOpportunityIds(organizationId),
+      this.getDuplicateDemoBriefIds(organizationId),
+      this.countRows('investment_search_briefs', organizationId, (query) => query.ilike('title', 'Demo:%')),
+      this.countRows('source_connector_runs', organizationId, (query) => query.lt('started_at', cutoff)),
+      this.countRows('raw_opportunities', organizationId, (query) => query.lt('created_at', cutoff)),
+      this.countRows('opportunity_matches', organizationId),
+      this.countRows('discovery_alerts', organizationId),
+      this.countRows('raw_opportunities', organizationId),
+      this.countRows('source_connector_runs', organizationId),
+    ])
+
+    return {
+      failed_runs: failedRuns,
+      rejected_raw_opportunities: rejectedRawIds.length,
+      unmatched_raw_opportunities: unmatchedRawIds.length,
+      duplicate_demo_briefs: duplicateDemoIds.length,
+      all_demo_briefs: allDemoBriefs,
+      all_test_data: matches + alerts + raw + runs + allDemoBriefs,
+      old_discovery_runs: oldRuns,
+      old_raw_opportunities: oldRaw,
+    }
   }
 
   async listBriefMatches(organizationId: string, briefId: string): Promise<Array<OpportunityMatch & { raw: RawOpportunity | null }>> {
@@ -243,10 +650,12 @@ export class OpportunityHunterService {
 
     const sourceHealth = sources.map((source) => {
       const lastRun = lastRunBySource.get(source.id) ?? null
+      const { health, reason } = mapHealth(source, lastRun)
       return {
         source,
         lastRun,
-        health: mapHealth(lastRun),
+        health,
+        reason,
       }
     })
 
@@ -256,6 +665,59 @@ export class OpportunityHunterService {
       topRanked,
       lastDiscoveryStatus: runRows.slice(0, 8),
       sourceHealth,
+    }
+  }
+
+  async getDiscoveryRunDetail(organizationId: string, runId: string): Promise<OpportunityHunterRunDetailData | null> {
+    const client = getSupabaseClient()
+    if (!client) return null
+
+    const { data: runData, error: runError } = await client
+      .from('source_connector_runs')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('id', runId)
+      .maybeSingle()
+
+    if (runError) throw new Error(runError.message)
+    const run = (runData as RunRow | null) ?? null
+    if (!run) return null
+
+    const [sourceResult, briefResult] = await Promise.all([
+      run.source_id
+        ? client
+          .from('opportunity_sources')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('id', run.source_id)
+          .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      run.brief_id
+        ? client
+          .from('investment_search_briefs')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('id', run.brief_id)
+          .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+
+      const extractedResult = await client
+        .from('raw_opportunities')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('connector_run_id', runId)
+        .order('created_at', { ascending: true })
+
+    if (sourceResult.error) throw new Error(sourceResult.error.message)
+    if (briefResult.error) throw new Error(briefResult.error.message)
+      if (extractedResult.error) throw new Error(extractedResult.error.message)
+
+    return {
+      run,
+      source: (sourceResult.data as SourceRow | null) ?? null,
+      brief: (briefResult.data as BriefRow | null) ?? null,
+        extractedOpportunities: toArray(extractedResult.data as RawRow[]),
     }
   }
 }

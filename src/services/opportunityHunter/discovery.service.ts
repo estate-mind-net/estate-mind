@@ -1,5 +1,5 @@
 import type { InvestmentSearchBrief, OpportunitySource, RawOpportunity } from '@/lib/types/opportunityHunter'
-import type { DiscoveryRunResult } from './types'
+import type { DiscoveryRunResult, DiscoveryTraceEvent } from './types'
 import { resolveConnector } from './connectorRegistry'
 import { normalizeRawOpportunity } from './normalization'
 import { deduplicateRawOpportunities } from './deduplication'
@@ -9,7 +9,7 @@ export interface DiscoveryRepository {
   createRun(input: {
     organizationId: string
     sourceId: string
-    briefId: string
+    briefId: string | null
     connectorName: string
     connectorType: string
   }): Promise<{ id: string }>
@@ -20,6 +20,7 @@ export interface DiscoveryRepository {
     deduplicated: number
     matched: number
     errorMessage?: string
+    metadata?: Record<string, unknown>
   }): Promise<void>
   insertRawOpportunities(items: RawOpportunity[]): Promise<RawOpportunity[]>
   upsertMatch(input: {
@@ -135,6 +136,9 @@ export const runDiscoveryForBriefAndSource = async (
   organizationId: string,
   brief: InvestmentSearchBrief,
   source: OpportunitySource,
+  context?: {
+    activeSourceCount?: number
+  },
 ): Promise<DiscoveryRunResult> => {
   const connector = resolveConnector(source)
   if (!connector) {
@@ -158,8 +162,117 @@ export const runDiscoveryForBriefAndSource = async (
     connectorType: connector.type,
   })
 
+  const generatedQueries: string[] = []
+  const connectorErrors: string[] = []
+  let queryCount = 0
+  let searchResultsCount = 0
+  let extractedOpportunitiesCount = 0
+  let categoryPagesSkipped = 0
+  let listingPagesFound = 0
+  let listingCardsExtracted = 0
+  let invalidTitlesRejected = 0
+  let invalidUrlsRejected = 0
+  let lowConfidenceRejected = 0
+  let portalMetrics: Record<string, unknown> = {}
+  let rawSearchResults: Array<Record<string, unknown>> = []
+  let validationRejections: Array<Record<string, unknown>> = []
+  const rejectedMatches: Array<Record<string, unknown>> = []
+  const pageClassifications: Array<Record<string, unknown>> = []
+
   try {
-    const fetchedRaw = await connector.fetchOpportunities({ organizationId, brief, source })
+    const onTrace = (event: DiscoveryTraceEvent) => {
+      if (event.stage === 'search_queries_generated') {
+        const queries = Array.isArray(event.data?.queries)
+          ? event.data?.queries.filter((item): item is string => typeof item === 'string')
+          : []
+        queryCount = Number(event.data?.queryCount ?? queries.length)
+        generatedQueries.splice(0, generatedQueries.length, ...queries)
+      }
+
+      if (event.stage === 'search_results_returned') {
+        searchResultsCount = Number(event.data?.searchResultsCount ?? searchResultsCount)
+      }
+
+      if (event.stage === 'listings_extracted') {
+        extractedOpportunitiesCount = Number(event.data?.extractedOpportunitiesCount ?? extractedOpportunitiesCount)
+        categoryPagesSkipped = Number(event.data?.categoryPagesSkipped ?? categoryPagesSkipped)
+        listingPagesFound = Number(event.data?.listingPagesFound ?? listingPagesFound)
+        listingCardsExtracted = Number(event.data?.listingCardsExtracted ?? listingCardsExtracted)
+        invalidTitlesRejected = Number(event.data?.invalid_titles_rejected ?? event.data?.invalidTitlesRejected ?? invalidTitlesRejected)
+        invalidUrlsRejected = Number(event.data?.invalid_urls_rejected ?? event.data?.invalidUrlsRejected ?? invalidUrlsRejected)
+        lowConfidenceRejected = Number(event.data?.low_confidence_rejected ?? event.data?.lowConfidenceRejected ?? lowConfidenceRejected)
+        if (event.data?.portalMetrics && typeof event.data.portalMetrics === 'object') {
+          portalMetrics = event.data.portalMetrics as Record<string, unknown>
+        }
+        validationRejections = Array.isArray(event.data?.validationRejections)
+          ? event.data.validationRejections.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+          : validationRejections
+      }
+
+      if (event.stage === 'raw_search_results') {
+        rawSearchResults = Array.isArray(event.data?.rawSearchResults)
+          ? event.data.rawSearchResults.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+          : []
+      }
+
+      if (event.stage === 'page_classified') {
+        const classification = String(event.data?.classification ?? '').trim()
+        const url = String(event.data?.url ?? '').trim()
+        if (url || classification) {
+          pageClassifications.push({
+            url,
+            classification,
+            cardsExtracted: Number(event.data?.cardsExtracted ?? 0),
+          })
+        }
+
+        if (classification === 'category_page' || classification === 'search_results_page') {
+          categoryPagesSkipped += Number(event.data?.skipped ? 1 : 0)
+          listingCardsExtracted += Number(event.data?.cardsExtracted ?? 0)
+        }
+
+        if (classification === 'individual_listing') {
+          listingPagesFound += 1
+        }
+      }
+
+      if (event.stage === 'error') {
+        const message = String(event.data?.message ?? '').trim()
+        if (message.length > 0) {
+          connectorErrors.push(message)
+        }
+      }
+
+      console.log('[DISCOVERY TRACE]', {
+        stage: event.stage,
+        runId: run.id,
+        sourceId: source.id,
+        briefId: brief.id,
+        ...(event.data ?? {}),
+      })
+    }
+
+    onTrace({
+      stage: 'connector_execution',
+      data: {
+        connectorName: connector.name,
+        connectorType: connector.type,
+      },
+    })
+
+    const fetchedRaw = await connector.fetchOpportunities({ organizationId, brief, source, onTrace })
+    if (extractedOpportunitiesCount === 0) {
+      extractedOpportunitiesCount = fetchedRaw.length
+    }
+
+    console.log('[DISCOVERY TRACE]', {
+      stage: 'raw_opportunities_fetched',
+      runId: run.id,
+      sourceId: source.id,
+      briefId: brief.id,
+      fetchedCount: fetchedRaw.length,
+    })
+
     const normalized = fetchedRaw.map((item) => normalizeRawOpportunity({
       ...item,
       organization_id: organizationId,
@@ -168,15 +281,50 @@ export const runDiscoveryForBriefAndSource = async (
     }))
 
     const { canonical, duplicates } = deduplicateRawOpportunities(normalized)
+    console.log('[DISCOVERY TRACE]', {
+      stage: 'opportunities_deduplicated',
+      runId: run.id,
+      sourceId: source.id,
+      briefId: brief.id,
+      canonicalCount: canonical.length,
+      deduplicatedCount: duplicates.length,
+    })
+
     const insertedRows = await repo.insertRawOpportunities([...canonical, ...duplicates])
+    console.log('[DISCOVERY TRACE]', {
+      stage: 'raw_opportunities_inserted',
+      runId: run.id,
+      sourceId: source.id,
+      briefId: brief.id,
+      insertedCount: insertedRows.length,
+    })
 
     const canonicalRows = insertedRows.filter((row) => !row.is_duplicate)
     let matchedCount = 0
+    let skippedByScoreCount = 0
 
     for (const row of canonicalRows) {
       if (!row.id) continue
       const evaluation = evaluateOpportunityMatch(brief, row)
+      if (evaluation.isRejected) {
+        skippedByScoreCount += 1
+        rejectedMatches.push({
+          raw_opportunity_id: row.id,
+          title: row.title,
+          source_url: row.source_url ?? '',
+          city: row.city ?? '',
+          price: row.price ?? null,
+          property_type: row.property_type ?? '',
+          match_score: evaluation.matchScore,
+          rejection_reasons: evaluation.rejectionReasons,
+          mismatch_reasons: evaluation.mismatchReasons,
+          missing_data: evaluation.missingData,
+        })
+        continue
+      }
+
       if (evaluation.matchScore < 45) {
+        skippedByScoreCount += 1
         continue
       }
 
@@ -220,12 +368,57 @@ export const runDiscoveryForBriefAndSource = async (
       })
     }
 
+    console.log('[DISCOVERY TRACE]', {
+      stage: 'opportunities_matched',
+      runId: run.id,
+      sourceId: source.id,
+      briefId: brief.id,
+      matchedCount,
+      skippedByScoreCount,
+    })
+
+    const skippedOpportunitiesCount = duplicates.length + skippedByScoreCount
+    const traceMetadata = {
+      source_count: context?.activeSourceCount ?? 1,
+      query_count: queryCount,
+      search_results_count: searchResultsCount,
+      category_pages_skipped: categoryPagesSkipped,
+      listing_pages_found: listingPagesFound,
+      listing_cards_extracted: listingCardsExtracted,
+      invalid_titles_rejected: invalidTitlesRejected,
+      invalid_urls_rejected: invalidUrlsRejected,
+      low_confidence_rejected: lowConfidenceRejected,
+      portal_metrics: portalMetrics,
+      raw_search_results: rawSearchResults,
+      validation_rejections: validationRejections,
+      rejected_matches: rejectedMatches,
+      extracted_opportunities_count: extractedOpportunitiesCount,
+      inserted_opportunities_count: insertedRows.length,
+      matched_opportunities_count: matchedCount,
+      skipped_opportunities_count: skippedOpportunitiesCount,
+      errors: connectorErrors,
+      generated_queries: generatedQueries,
+      page_classifications: pageClassifications,
+      brief_id: brief.id,
+      brief_title: brief.title,
+      source_id: source.id,
+      source_name: source.name,
+      source_type: source.type,
+    }
+
+    console.log('[DISCOVERY TRACE]', {
+      stage: 'final_matches_saved',
+      runId: run.id,
+      ...traceMetadata,
+    })
+
     await repo.finalizeRun(run.id, {
       status: duplicates.length > 0 ? 'partial' : 'succeeded',
       fetched: fetchedRaw.length,
       inserted: insertedRows.length,
       deduplicated: duplicates.length,
       matched: matchedCount,
+      metadata: traceMetadata,
     })
 
     return {
@@ -240,6 +433,14 @@ export const runDiscoveryForBriefAndSource = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected discovery failure.'
 
+    console.error('[DISCOVERY TRACE]', {
+      stage: 'connector_error',
+      runId: run.id,
+      sourceId: source.id,
+      briefId: brief.id,
+      error: message,
+    })
+
     await repo.finalizeRun(run.id, {
       status: 'failed',
       fetched: 0,
@@ -247,6 +448,33 @@ export const runDiscoveryForBriefAndSource = async (
       deduplicated: 0,
       matched: 0,
       errorMessage: message,
+      metadata: {
+        source_count: context?.activeSourceCount ?? 1,
+        query_count: 0,
+        search_results_count: 0,
+        category_pages_skipped: 0,
+        listing_pages_found: 0,
+        listing_cards_extracted: 0,
+        invalid_titles_rejected: invalidTitlesRejected,
+        invalid_urls_rejected: invalidUrlsRejected,
+        low_confidence_rejected: lowConfidenceRejected,
+        portal_metrics: {},
+        raw_search_results: rawSearchResults,
+        validation_rejections: validationRejections,
+        rejected_matches: rejectedMatches,
+        extracted_opportunities_count: 0,
+        inserted_opportunities_count: 0,
+        matched_opportunities_count: 0,
+        skipped_opportunities_count: 0,
+        errors: [message],
+        generated_queries: [],
+        page_classifications: [],
+        brief_id: brief.id,
+        brief_title: brief.title,
+        source_id: source.id,
+        source_name: source.name,
+        source_type: source.type,
+      },
     })
 
     await repo.createAlert({

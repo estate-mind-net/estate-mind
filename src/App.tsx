@@ -16,6 +16,7 @@ import { InvestmentPipeline } from '@/components/InvestmentPipeline'
 import { PresentationPage } from '@/components/PresentationPage'
 import { FoundingPartnerPresentation } from '@/components/FoundingPartnerPresentation'
 import { AppNavigation } from '@/components/AppNavigation'
+import { AppLayout } from '@/components/navigation/AppLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
@@ -28,6 +29,7 @@ import { PropertyComparisonPage } from '@/pages/PropertyComparisonPage'
 import { OpportunityHunterDashboardPage } from '@/pages/OpportunityHunterDashboardPage'
 import { OpportunityHunterFormPage } from '@/pages/OpportunityHunterFormPage'
 import { OpportunityHunterDetailPage } from '@/pages/OpportunityHunterDetailPage'
+import { OpportunityHunterRunDetailPage } from '@/pages/OpportunityHunterRunDetailPage'
 import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
@@ -59,12 +61,7 @@ function AuthPageGuard({ children }: AuthPageGuardProps) {
 
 function WorkspaceShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-background">
-      <AppNavigation />
-      <div className="p-4 sm:p-6 lg:p-8">
-        <div className="mx-auto max-w-7xl">{children}</div>
-      </div>
-    </div>
+    <AppLayout>{children}</AppLayout>
   )
 }
 
@@ -234,6 +231,7 @@ function App() {
           <Route path="/compare" element={<WorkspaceShell><PropertyComparisonPage /></WorkspaceShell>} />
           <Route path="/settings" element={<WorkspaceShell><SettingsPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter" element={<WorkspaceShell><OpportunityHunterDashboardPage /></WorkspaceShell>} />
+          <Route path="/opportunity-hunter/runs/:runId" element={<WorkspaceShell><OpportunityHunterRunDetailPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter/new" element={<WorkspaceShell><OpportunityHunterFormPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter/:id" element={<WorkspaceShell><OpportunityHunterDetailPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter/:id/edit" element={<WorkspaceShell><OpportunityHunterFormPage /></WorkspaceShell>} />

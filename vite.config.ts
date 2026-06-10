@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
-import { defineConfig, PluginOption } from "vite";
+import { defineConfig, loadEnv, PluginOption } from "vite";
 
 import sparkPlugin from "@github/spark/spark-vite-plugin";
 import createIconImportProxy from "@github/spark/vitePhosphorIconProxyPlugin";
@@ -132,21 +132,46 @@ const discoveryRunDevMiddleware = (): PluginOption => ({
   },
 })
 
-// https://vite.dev/config/
-export default defineConfig({
-  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
-  plugins: [
-    dealAnalysisDevMiddleware(),
-    discoveryRunDevMiddleware(),
-    react(),
-    tailwindcss(),
-    // DO NOT REMOVE
-    createIconImportProxy() as PluginOption,
-    sparkPlugin() as PluginOption,
-  ],
-  resolve: {
-    alias: {
-      '@': resolve(projectRoot, 'src')
+const syncDiscoveryEnv = (env: Record<string, string>) => {
+  const keys = [
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'OPENAI_API_KEY',
+    'WEB_SEARCH_API_KEY',
+    'VITE_WEB_SEARCH_PROVIDER',
+  ]
+
+  for (const key of keys) {
+    if (!process.env[key] && env[key]) {
+      process.env[key] = env[key]
     }
-  },
+  }
+}
+
+// https://vite.dev/config/
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, projectRoot, '')
+
+  if (mode === 'development') {
+    syncDiscoveryEnv(env)
+  }
+
+  return {
+    envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
+    plugins: [
+      dealAnalysisDevMiddleware(),
+      discoveryRunDevMiddleware(),
+      react(),
+      tailwindcss(),
+      // DO NOT REMOVE
+      createIconImportProxy() as PluginOption,
+      sparkPlugin() as PluginOption,
+    ],
+    resolve: {
+      alias: {
+        '@': resolve(projectRoot, 'src')
+      }
+    },
+  }
 })

@@ -1,4 +1,4 @@
-import { Brain, ChartLine, Buildings, ChartPieSlice, Gear, House, SignOut } from '@phosphor-icons/react'
+import { Brain, SignOut } from '@phosphor-icons/react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -42,16 +42,6 @@ export function AppNavigation() {
 
         {user ? (
           <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden items-center gap-1 sm:flex">
-              <Button asChild variant="ghost" size="sm"><Link to="/dashboard"><House className="mr-1 h-4 w-4" />Dashboard</Link></Button>
-              <Button asChild variant="ghost" size="sm"><Link to="/portfolio"><ChartPieSlice className="mr-1 h-4 w-4" />Portfolio</Link></Button>
-              <Button asChild variant="ghost" size="sm"><Link to="/opportunities"><Buildings className="mr-1 h-4 w-4" />Opportunities</Link></Button>
-              <Button asChild variant="ghost" size="sm"><Link to="/opportunity-hunter"><Brain className="mr-1 h-4 w-4" />Hunter</Link></Button>
-              <Button asChild variant="ghost" size="sm"><Link to="/reports"><ChartLine className="mr-1 h-4 w-4" />Reports</Link></Button>
-              <Button asChild variant="ghost" size="sm"><Link to="/settings"><Gear className="mr-1 h-4 w-4" />Settings</Link></Button>
-              <Button variant="ghost" size="sm" onClick={handleLogout}><SignOut className="mr-1 h-4 w-4" />Logout</Button>
-            </div>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="rounded-full outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring">
@@ -69,22 +59,7 @@ export function AppNavigation() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/dashboard')}>
-                  Dashboard
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/portfolio')}>
-                  Portfolio
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/opportunities')}>
-                  Opportunities
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/opportunity-hunter')}>
-                  Opportunity Hunter
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/reports')}>
-                  Reports
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/settings')}>
-                  Settings
+                  Open Workspace
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout} variant="destructive">
