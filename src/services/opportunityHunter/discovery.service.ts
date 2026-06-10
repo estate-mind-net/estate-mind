@@ -4,6 +4,7 @@ import { resolveConnector } from './connectorRegistry'
 import { normalizeRawOpportunity } from './normalization'
 import { deduplicateRawOpportunities } from './deduplication'
 import { evaluateOpportunityMatch } from './matchingEngine'
+import { validateRawOpportunityForSave } from './saveValidation'
 
 export interface DiscoveryRepository {
   createRun(input: {
@@ -173,6 +174,10 @@ export const runDiscoveryForBriefAndSource = async (
   let invalidTitlesRejected = 0
   let invalidUrlsRejected = 0
   let lowConfidenceRejected = 0
+  let fourZidaCardsFound = 0
+  let fourZidaCardsExtracted = 0
+  let fourZidaCardsRejected = 0
+  let fourZidaRejectionReasons: Record<string, unknown> = {}
   let portalMetrics: Record<string, unknown> = {}
   let rawSearchResults: Array<Record<string, unknown>> = []
   let validationRejections: Array<Record<string, unknown>> = []
@@ -201,6 +206,12 @@ export const runDiscoveryForBriefAndSource = async (
         invalidTitlesRejected = Number(event.data?.invalid_titles_rejected ?? event.data?.invalidTitlesRejected ?? invalidTitlesRejected)
         invalidUrlsRejected = Number(event.data?.invalid_urls_rejected ?? event.data?.invalidUrlsRejected ?? invalidUrlsRejected)
         lowConfidenceRejected = Number(event.data?.low_confidence_rejected ?? event.data?.lowConfidenceRejected ?? lowConfidenceRejected)
+        fourZidaCardsFound = Number(event.data?.four_zida_cards_found ?? fourZidaCardsFound)
+        fourZidaCardsExtracted = Number(event.data?.four_zida_cards_extracted ?? fourZidaCardsExtracted)
+        fourZidaCardsRejected = Number(event.data?.four_zida_cards_rejected ?? fourZidaCardsRejected)
+        if (event.data?.four_zida_rejection_reasons && typeof event.data.four_zida_rejection_reasons === 'object') {
+          fourZidaRejectionReasons = event.data.four_zida_rejection_reasons as Record<string, unknown>
+        }
         if (event.data?.portalMetrics && typeof event.data.portalMetrics === 'object') {
           portalMetrics = event.data.portalMetrics as Record<string, unknown>
         }
@@ -280,7 +291,31 @@ export const runDiscoveryForBriefAndSource = async (
       connector_run_id: run.id,
     }))
 
-    const { canonical, duplicates } = deduplicateRawOpportunities(normalized)
+    const preSaveRejections: Array<Record<string, unknown>> = []
+    const validNormalized: RawOpportunity[] = []
+    for (const item of normalized) {
+      const validation = validateRawOpportunityForSave(item)
+      if (validation.accepted) {
+        validNormalized.push(item)
+        continue
+      }
+
+      preSaveRejections.push({
+        source_url: item.source_url ?? '',
+        title: item.title,
+        city: item.city ?? '',
+        price: item.price ?? null,
+        size_m2: item.size_m2 ?? null,
+        rejection_reasons: validation.reasons,
+        stage: 'pre_save_validation',
+      })
+    }
+
+    if (preSaveRejections.length > 0) {
+      validationRejections = [...validationRejections, ...preSaveRejections]
+    }
+
+    const { canonical, duplicates } = deduplicateRawOpportunities(validNormalized)
     console.log('[DISCOVERY TRACE]', {
       stage: 'opportunities_deduplicated',
       runId: run.id,
@@ -377,7 +412,7 @@ export const runDiscoveryForBriefAndSource = async (
       skippedByScoreCount,
     })
 
-    const skippedOpportunitiesCount = duplicates.length + skippedByScoreCount
+    const skippedOpportunitiesCount = duplicates.length + skippedByScoreCount + preSaveRejections.length
     const traceMetadata = {
       source_count: context?.activeSourceCount ?? 1,
       query_count: queryCount,
@@ -385,12 +420,18 @@ export const runDiscoveryForBriefAndSource = async (
       category_pages_skipped: categoryPagesSkipped,
       listing_pages_found: listingPagesFound,
       listing_cards_extracted: listingCardsExtracted,
+      four_zida_cards_found: fourZidaCardsFound,
+      four_zida_cards_extracted: fourZidaCardsExtracted,
+      four_zida_cards_rejected: fourZidaCardsRejected,
+      four_zida_rejection_reasons: fourZidaRejectionReasons,
       invalid_titles_rejected: invalidTitlesRejected,
       invalid_urls_rejected: invalidUrlsRejected,
       low_confidence_rejected: lowConfidenceRejected,
       portal_metrics: portalMetrics,
       raw_search_results: rawSearchResults,
       validation_rejections: validationRejections,
+      pre_save_rejections: preSaveRejections,
+      pre_save_rejections_count: preSaveRejections.length,
       rejected_matches: rejectedMatches,
       extracted_opportunities_count: extractedOpportunitiesCount,
       inserted_opportunities_count: insertedRows.length,

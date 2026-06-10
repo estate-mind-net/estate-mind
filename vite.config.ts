@@ -88,14 +88,18 @@ const discoveryRunDevMiddleware = (): PluginOption => ({
   name: 'discovery-run-dev-middleware',
   apply: 'serve',
   configureServer(server) {
+    // npm run dev uses this middleware for /api/discovery/run.
+    // Vercel production and `vercel dev` use api/discovery/run.ts.
+    // Both routes call the same shared server handler.
     server.middlewares.use(async (req, res, next) => {
       const path = (req.url ?? '').split('?')[0]
-      if (path !== '/api/discovery/run') {
+      const normalizedPath = path.replace(/\/+$/, '') || '/'
+      if (normalizedPath !== '/api/discovery/run') {
         next()
         return
       }
 
-      console.log('[DISCOVERY ROUTE HIT]', {
+      console.log('[discovery] dev middleware route hit', {
         runtime: 'vite-dev-middleware',
         method: req.method ?? 'UNKNOWN',
         url: req.url ?? '/api/discovery/run',

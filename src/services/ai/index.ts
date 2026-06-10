@@ -1,2 +1,5 @@
 export * from './analysis.service'
 export * from './document.service'
+export * from './confidenceEngine.service'
+export * from './missingEvidenceEngine.service'
+export * from './dueDiligenceAssistant.service'

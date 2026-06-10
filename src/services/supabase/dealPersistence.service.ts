@@ -1,5 +1,6 @@
 import type { InvestmentAnalysis, Property } from '@/lib/types'
 import { getSupabaseClient } from './client'
+import { replaceAiFindingsForOpportunity } from './aiFindingsPersistence'
 
 type ProfileRow = {
   id?: string
@@ -232,6 +233,8 @@ export const persistDealAnalyzerResult = async (
     if (noteError || !noteData) {
       throw new Error(noteError?.message || 'Failed to create analysis note snapshot.')
     }
+
+    await replaceAiFindingsForOpportunity(client, analysis, organizationId, opportunityId)
 
     return {
       persisted: true,

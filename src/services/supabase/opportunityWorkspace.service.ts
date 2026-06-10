@@ -1,6 +1,7 @@
 import type { InvestmentAnalysis, Opportunity, OpportunityStageHistoryEntry, Property } from '@/lib/types'
 import { normalizeOpportunityStage } from '@/lib/constants/opportunityStages'
 import { getSupabaseClient } from './client'
+import { replaceAiFindingsForOpportunity } from './aiFindingsPersistence'
 
 type PropertyRow = {
   id: string
@@ -620,8 +621,14 @@ export class OpportunityWorkspaceService {
     },
   ): Promise<PersistOpportunityAnalysisResult> {
     try {
+      const client = getSupabaseClient()
+      if (!client) {
+        throw new Error('Supabase is unavailable.')
+      }
+
       await this.updateOpportunityWithAnalysis(context.opportunityId, analysis)
       await this.insertAnalysisNote(context.organizationId, context.opportunityId, analysis)
+      await replaceAiFindingsForOpportunity(client, analysis, context.organizationId, context.opportunityId)
       return { saved: true }
     } catch (error) {
       return {

@@ -25,6 +25,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { NewOpportunityPage } from '@/pages/NewOpportunityPage'
 import { OpportunityDetailPage } from '@/pages/OpportunityDetailPage'
 import { OpportunityInvestmentReportPage } from '@/pages/OpportunityInvestmentReportPage'
+import { DueDiligencePage } from '@/pages/DueDiligencePage'
 import { PropertyComparisonPage } from '@/pages/PropertyComparisonPage'
 import { OpportunityHunterDashboardPage } from '@/pages/OpportunityHunterDashboardPage'
 import { OpportunityHunterFormPage } from '@/pages/OpportunityHunterFormPage'
@@ -224,6 +225,14 @@ function App() {
             element={
               <WorkspaceShell>
                 <OpportunityInvestmentReportPage />
+              </WorkspaceShell>
+            }
+          />
+          <Route
+            path="/opportunities/:opportunityId/due-diligence"
+            element={
+              <WorkspaceShell>
+                <DueDiligencePage />
               </WorkspaceShell>
             }
           />

@@ -850,6 +850,10 @@ export class WebSearchConnector implements OpportunityConnector {
     let invalidTitlesRejected = 0
     let invalidUrlsRejected = 0
     let lowConfidenceRejected = 0
+    let fourZidaCardsFound = 0
+    let fourZidaCardsExtracted = 0
+    let fourZidaCardsRejected = 0
+    const fourZidaRejectionReasons: Record<string, number> = {}
     const portalMetrics = createPortalMetrics()
     const validationRejections: Array<Record<string, unknown>> = []
 
@@ -899,6 +903,25 @@ export class WebSearchConnector implements OpportunityConnector {
       portalMetrics[portal].invalid_titles_rejected += extracted.metrics.invalid_titles_rejected
       portalMetrics[portal].invalid_urls_rejected += extracted.metrics.invalid_urls_rejected
       portalMetrics[portal].low_confidence_rejected += extracted.metrics.low_confidence_rejected
+      portalMetrics[portal].four_zida_cards_found += extracted.metrics.four_zida_cards_found
+      portalMetrics[portal].four_zida_cards_extracted += extracted.metrics.four_zida_cards_extracted
+      portalMetrics[portal].four_zida_cards_rejected += extracted.metrics.four_zida_cards_rejected
+      Object.entries(extracted.metrics.rejection_reasons ?? {}).forEach(([reason, count]) => {
+        const increment = Number(count ?? 0)
+        if (!Number.isFinite(increment) || increment <= 0) return
+        portalMetrics[portal].rejection_reasons[reason] = (portalMetrics[portal].rejection_reasons[reason] ?? 0) + increment
+      })
+
+      if (portal === '4zida') {
+        fourZidaCardsFound += extracted.metrics.four_zida_cards_found
+        fourZidaCardsExtracted += extracted.metrics.four_zida_cards_extracted
+        fourZidaCardsRejected += extracted.metrics.four_zida_cards_rejected
+        Object.entries(extracted.metrics.rejection_reasons ?? {}).forEach(([reason, count]) => {
+          const increment = Number(count ?? 0)
+          if (!Number.isFinite(increment) || increment <= 0) return
+          fourZidaRejectionReasons[reason] = (fourZidaRejectionReasons[reason] ?? 0) + increment
+        })
+      }
 
       invalidTitlesRejected += extracted.metrics.invalid_titles_rejected
       invalidUrlsRejected += extracted.metrics.invalid_urls_rejected
@@ -954,6 +977,10 @@ export class WebSearchConnector implements OpportunityConnector {
         invalid_titles_rejected: invalidTitlesRejected,
         invalid_urls_rejected: invalidUrlsRejected,
         low_confidence_rejected: lowConfidenceRejected,
+        four_zida_cards_found: fourZidaCardsFound,
+        four_zida_cards_extracted: fourZidaCardsExtracted,
+        four_zida_cards_rejected: fourZidaCardsRejected,
+        four_zida_rejection_reasons: fourZidaRejectionReasons,
         portalMetrics,
         validationRejections,
       },

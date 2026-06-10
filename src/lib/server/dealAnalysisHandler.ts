@@ -4,6 +4,14 @@
 
 import { collectMarketData, getMarketDataProvidersFromConfig } from '../../services/marketData'
 import type { MarketDataBundle, MarketDataPropertyContext } from '../../services/marketData'
+import type { AnalysisFindingItem, AiFindingSourceType } from '../types'
+import {
+  calculateConfidence,
+  calculateDataCompleteness,
+  calculateEvidenceStrength,
+  calculateSourceQuality,
+} from '../../services/ai/confidenceEngine.service'
+import { generateMissingEvidence } from '../../services/ai/missingEvidenceEngine.service'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 const OPENAI_TIMEOUT_MS = 20_000
@@ -68,6 +76,102 @@ const asMetricObject = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 
 const normalizedText = (value: unknown) => String(value ?? '').trim().toLowerCase()
+
+const findingSourceTypes: AiFindingSourceType[] = [
+  'user_input',
+  'listing',
+  'uploaded_document',
+  'portal',
+  'market_api',
+  'ai_inference',
+]
+
+const asFindingSourceType = (value: unknown, fallback: AiFindingSourceType): AiFindingSourceType => {
+  if (typeof value !== 'string') return fallback
+  const normalized = value.trim() as AiFindingSourceType
+  return findingSourceTypes.includes(normalized) ? normalized : fallback
+}
+
+const confidenceFromLevel = (value: 'high' | 'medium' | 'low'): number => {
+  if (value === 'high') return 85
+  if (value === 'medium') return 65
+  return 45
+}
+
+const asFindingConfidence = (value: unknown, fallback: number): number | null => {
+  if (value === null || typeof value === 'undefined') return fallback
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return clamp(Math.round(numeric), 0, 100)
+}
+
+const findingTitle = (value: string, fallback: string): string => {
+  const trimmed = value.trim()
+  if (!trimmed) return fallback
+  if (trimmed.length <= 80) return trimmed
+  return `${trimmed.slice(0, 77)}...`
+}
+
+const asFindingItemArray = (
+  value: unknown,
+  fallbackSourceType: AiFindingSourceType,
+  fallbackConfidence: number,
+): AnalysisFindingItem[] => {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item): AnalysisFindingItem | null => {
+      if (!item || typeof item !== 'object') return null
+      const row = item as Record<string, unknown>
+      const title = typeof row.title === 'string' && row.title.trim().length > 0
+        ? row.title.trim()
+        : findingTitle(String(row.value ?? row.explanation ?? ''), 'Untitled Finding')
+      const normalizedValue = typeof row.value === 'string' && row.value.trim().length > 0
+        ? row.value.trim()
+        : title
+      const explanation = typeof row.explanation === 'string' && row.explanation.trim().length > 0
+        ? row.explanation.trim()
+        : normalizedValue
+
+      return {
+        title,
+        value: normalizedValue,
+        confidence: asFindingConfidence(row.confidence, fallbackConfidence),
+        sourceType: asFindingSourceType(row.sourceType, fallbackSourceType),
+        explanation,
+      }
+    })
+    .filter((item): item is AnalysisFindingItem => item !== null)
+}
+
+const stringItemsToFindings = (
+  items: string[],
+  fallbackSourceType: AiFindingSourceType,
+  fallbackConfidence: number,
+  labelPrefix: string,
+): AnalysisFindingItem[] => {
+  return items
+    .filter((item) => item.trim().length > 0)
+    .map((item, index) => ({
+      title: findingTitle(item, `${labelPrefix} ${index + 1}`),
+      value: item,
+      confidence: fallbackConfidence,
+      sourceType: fallbackSourceType,
+      explanation: item,
+    }))
+}
+
+const missingSeverityRank: Record<'critical' | 'important' | 'optional', number> = {
+  critical: 0,
+  important: 1,
+  optional: 2,
+}
+
+const withConfidenceExplanation = (base: string, details: { dataCompleteness: number; evidenceStrength: number; sourceQuality: number }): string => {
+  const explanation = base.trim()
+  const suffix = `Confidence inputs: dataCompleteness=${details.dataCompleteness}, evidenceStrength=${details.evidenceStrength}, sourceQuality=${details.sourceQuality}.`
+  return explanation.length > 0 ? `${explanation} ${suffix}` : suffix
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic fallback metric calculation
@@ -256,7 +360,15 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
   const renovationROI = asMetricObject(payload.renovationROI)
   const appreciationPotential = asMetricObject(payload.appreciationPotential)
 
-  const factsProvided = asStringArray(payload.factsProvided, ['Property details provided by the user were used as baseline facts.'])
+  const baseConfidence = confidenceFromLevel(asConfidence(payload.confidenceLevel, 'medium'))
+  const factsFromPayload = asFindingItemArray(payload.facts, 'user_input', baseConfidence)
+  const estimatesFromPayload = asFindingItemArray(payload.estimates, 'ai_inference', baseConfidence)
+  const assumptionsFromPayload = asFindingItemArray(payload.assumptions, 'ai_inference', baseConfidence)
+  const risksFromPayload = asFindingItemArray(payload.risks, 'ai_inference', baseConfidence)
+  const opportunitiesFromPayload = asFindingItemArray(payload.opportunities, 'ai_inference', baseConfidence)
+  const missingEvidenceFromPayload = asFindingItemArray(payload.missingEvidence, 'ai_inference', 35)
+
+  const factsProvidedLegacy = asStringArray(payload.factsProvided, ['Property details provided by the user were used as baseline facts.'])
   const marketFacts = marketDataAvailable
     ? [
         `Market data provider mode: ${marketData?.providerMode ?? 'unknown'}.`,
@@ -265,20 +377,20 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
         marketAirbnb ? `Provider short-term estimate: ${Math.round(marketAirbnb.dailyRate)} ADR at ${Math.round(marketAirbnb.occupancyPct)}% occupancy (${marketAirbnb.source}, ${marketAirbnb.confidence} confidence).` : '',
       ].filter(Boolean)
     : []
-  const assumptionsUsed = asStringArray(
+  const assumptionsUsedLegacy = asStringArray(
     payload.assumptionsUsed ?? payload.assumptions,
     ['Market and cost assumptions are conservative and should be validated with local comps.'],
   )
-  const estimates = asStringArray(
-    payload.estimates,
+  const estimatesLegacy = asStringArray(
+    payload.legacyEstimates ?? payload.estimates,
     ['Yield, ROI, and appreciation outputs are estimates and not guaranteed outcomes.'],
   )
-  const missingInformation = asStringArray(
+  const missingInformationLegacy = asStringArray(
     payload.missingInformation ?? payload.missingData,
     ['Recent comparable transactions, legal due diligence, and exact renovation scope are missing.'],
   )
-  const keyRisks = asStringArray(payload.keyRisks ?? payload.risks, ['Unexpected costs, regulatory changes, and market softening can reduce returns.'])
-  const keyUpsides = asStringArray(payload.keyUpsides ?? payload.opportunities, ['Strong micro-location demand and disciplined renovation can improve outcomes.'])
+  const keyRisksLegacy = asStringArray(payload.keyRisks ?? payload.risks, ['Unexpected costs, regulatory changes, and market softening can reduce returns.'])
+  const keyUpsidesLegacy = asStringArray(payload.keyUpsides ?? payload.opportunities, ['Strong micro-location demand and disciplined renovation can improve outcomes.'])
   const additionalDataToImproveAccuracy = asStringArray(
     payload.additionalDataToImproveAccuracy ?? payload.additionalDataForAccuracy,
     ['Verified comparable rents/sales, contractor quotes, tax and legal records, and occupancy history.'],
@@ -379,18 +491,34 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
     ? `Provider-supplied market data (${marketData?.providerMode ?? 'unknown'}) was used when available before deterministic fallback.`
     : ''
 
-  const assumptionsWithMarketData = marketDataNote && !assumptionsUsed.some((item) => item.toLowerCase().includes('provider-supplied market data'))
-    ? [marketDataNote, ...assumptionsUsed]
-    : assumptionsUsed
+  const assumptionsInput = assumptionsFromPayload.length > 0
+    ? assumptionsFromPayload.map((item) => item.value)
+    : assumptionsUsedLegacy
+  const estimatesInput = estimatesFromPayload.length > 0
+    ? estimatesFromPayload.map((item) => item.value)
+    : estimatesLegacy
+  const missingInformationInput = missingEvidenceFromPayload.length > 0
+    ? missingEvidenceFromPayload.map((item) => item.value)
+    : missingInformationLegacy
+  const keyRisksInput = risksFromPayload.length > 0
+    ? risksFromPayload.map((item) => item.value)
+    : keyRisksLegacy
+  const keyUpsidesInput = opportunitiesFromPayload.length > 0
+    ? opportunitiesFromPayload.map((item) => item.value)
+    : keyUpsidesLegacy
+
+  const assumptionsWithMarketData = marketDataNote && !assumptionsInput.some((item) => item.toLowerCase().includes('provider-supplied market data'))
+    ? [marketDataNote, ...assumptionsInput]
+    : assumptionsInput
   const assumptionsFinal = usedDeterministicEstimate && !assumptionsWithMarketData.some((item) => item.toLowerCase().includes('deterministic estimate model'))
     ? [deterministicEstimateNote, ...assumptionsWithMarketData]
     : assumptionsWithMarketData
-  const estimatesFinal = usedDeterministicEstimate && !estimates.some((item) => item.toLowerCase().includes('deterministic'))
-    ? ['Rent, ROI, rental yield, and Airbnb yield are deterministic estimates, not guaranteed outcomes.', ...estimates]
-    : estimates
-  const missingInformationFinal = usedDeterministicEstimate && !missingInformation.some((item) => item.toLowerCase().includes('market comparable api'))
-    ? ['Live market comparable API data feed is unavailable.', ...missingInformation]
-    : missingInformation
+  const estimatesFinal = usedDeterministicEstimate && !estimatesInput.some((item) => item.toLowerCase().includes('deterministic'))
+    ? ['Rent, ROI, rental yield, and Airbnb yield are deterministic estimates, not guaranteed outcomes.', ...estimatesInput]
+    : estimatesInput
+  const missingInformationFinal = usedDeterministicEstimate && !missingInformationInput.some((item) => item.toLowerCase().includes('market comparable api'))
+    ? ['Live market comparable API data feed is unavailable.', ...missingInformationInput]
+    : missingInformationInput
   const executiveSummaryFinal = usedDeterministicEstimate
     ? `${investmentThesis} ${fallbackDisclosure}`
     : investmentThesis
@@ -400,7 +528,7 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
     ? recommendation
     : 'watch'
 
-  const derivedConfidence = missingInformation.length > 0 ? 'low' : 'high'
+  const derivedConfidence = missingInformationFinal.length > 0 ? 'low' : 'high'
   const confidenceLevel = asConfidence(payload.confidenceLevel, derivedConfidence)
 
   const rawOverallScore = clamp(Math.round(asNumber(score.overall, 65)), 0, 100)
@@ -408,13 +536,13 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
   const metricConfidence = (provided: unknown, value: string | number | null): 'high' | 'medium' | 'low' => {
     if (value === null) return 'low'
     const normalized = asConfidence(provided, confidenceLevel)
-    if (missingInformation.length > 0 && normalized === 'high') return 'medium'
+    if (missingInformationFinal.length > 0 && normalized === 'high') return 'medium'
     return normalized
   }
 
   const severeQualityEvidence = hasExplicitNearZeroRationale([
     executiveSummaryFinal,
-    ...keyRisks,
+    ...keyRisksInput,
     asNonEmptyString(payload.executiveSummary, ''),
     asNonEmptyString(rentalYieldMetric.explanation, ''),
     asNonEmptyString(airbnbYieldMetric.explanation, ''),
@@ -424,7 +552,7 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
     asNonEmptyString(legalRiskMetric.explanation, ''),
   ])
 
-  const overallScore = rawOverallScore === 0 && confidenceLevel === 'low' && hasSignificantMissingInformation(missingInformation) && !severeQualityEvidence
+  const overallScore = rawOverallScore === 0 && confidenceLevel === 'low' && hasSignificantMissingInformation(missingInformationFinal) && !severeQualityEvidence
     ? 60
     : rawOverallScore
 
@@ -458,9 +586,115 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
     optimistic: buildScenario(1.12, 1.4, 1.25),
   }
 
-  const reasonsToInvest = keyUpsides.slice(0, 3)
-  const thesisRisks = (keyRisks.length > 0 ? keyRisks : risks).slice(0, 3)
-  const upsideOpportunities = keyUpsides.slice(0, 3)
+  const reasonsToInvest = keyUpsidesInput.slice(0, 3)
+  const thesisRisks = keyRisksInput.slice(0, 3)
+  const upsideOpportunities = keyUpsidesInput.slice(0, 3)
+
+  const totalExpectedEvidence = Math.max(6, missingInformationFinal.length + 6)
+  const metricEvidenceSignals = [
+    rentalYieldValue,
+    airbnbYieldValue,
+    renovationROIValue,
+    appreciationValue,
+    liquidityValue,
+    legalRiskValue,
+  ].filter((item) => item !== null).length
+
+  const factsFinal = factsFromPayload.length > 0
+    ? factsFromPayload
+    : [
+        ...stringItemsToFindings(marketFacts, 'market_api', confidenceFromLevel('high'), 'Market Fact'),
+        ...stringItemsToFindings(factsProvidedLegacy, 'user_input', confidenceFromLevel('high'), 'Fact'),
+      ]
+  const estimatesFindingsFinal = estimatesFromPayload.length > 0
+    ? estimatesFromPayload
+    : stringItemsToFindings(estimatesFinal, 'ai_inference', confidenceFromLevel('medium'), 'Estimate')
+  const assumptionsFindingsFinal = assumptionsFromPayload.length > 0
+    ? assumptionsFromPayload
+    : stringItemsToFindings(assumptionsFinal, 'ai_inference', confidenceFromLevel('medium'), 'Assumption')
+  const risksFindingsFinal = risksFromPayload.length > 0
+    ? risksFromPayload
+    : stringItemsToFindings(keyRisksInput, 'ai_inference', confidenceFromLevel('medium'), 'Risk')
+  const opportunitiesFindingsFinal = opportunitiesFromPayload.length > 0
+    ? opportunitiesFromPayload
+    : stringItemsToFindings(keyUpsidesInput, 'ai_inference', confidenceFromLevel('medium'), 'Opportunity')
+  const missingEvidenceFindingsFinal = missingEvidenceFromPayload.length > 0
+    ? missingEvidenceFromPayload
+    : stringItemsToFindings(missingInformationFinal, 'ai_inference', confidenceFromLevel('low'), 'Missing Evidence')
+
+  const generatedMissingEvidence = generateMissingEvidence({
+    hasMarketRentalData: Boolean(marketRental),
+    hasMarketTransactionData: Boolean(marketPrice),
+    hasLegalEvidence: factsFinal.some((item) => /(title|ownership|permit|zoning|legal|compliance)/i.test(`${item.title} ${item.value} ${item.explanation}`)),
+    hasEnergyEvidence: factsFinal.some((item) => /(energy certificate|energy class|epc|efficiency)/i.test(`${item.title} ${item.value} ${item.explanation}`)),
+    needsRenovation: normalizedText(property.condition).includes('needs-renovation'),
+  })
+
+  const mergedMissingEvidence = [...missingEvidenceFindingsFinal]
+  for (const item of generatedMissingEvidence) {
+    const exists = mergedMissingEvidence.some((existing) =>
+      existing.title.toLowerCase() === item.title.toLowerCase() ||
+      existing.value.toLowerCase() === item.value.toLowerCase(),
+    )
+    if (!exists) {
+      mergedMissingEvidence.push(item)
+    }
+  }
+
+  const missingEvidenceSorted = mergedMissingEvidence.sort((a, b) => {
+    const left = missingSeverityRank[a.severity ?? 'optional']
+    const right = missingSeverityRank[b.severity ?? 'optional']
+    return left - right
+  })
+
+  const estimatesWithConfidence = estimatesFindingsFinal.map((estimate) => {
+    const confidenceDetails = calculateConfidence({
+      dataCompleteness: calculateDataCompleteness({
+        missingEvidenceCount: missingInformationFinal.length,
+        totalExpectedEvidence,
+      }),
+      evidenceStrength: calculateEvidenceStrength({
+        evidenceSignals: metricEvidenceSignals,
+        totalEvidenceSignals: 6,
+        hasMarketData: marketDataAvailable,
+      }),
+      sourceQuality: calculateSourceQuality({ sourceTypes: [estimate.sourceType] }),
+    })
+
+    return {
+      ...estimate,
+      confidence: confidenceDetails.confidence,
+      explanation: withConfidenceExplanation(estimate.explanation, confidenceDetails),
+    }
+  })
+
+  const recommendationConfidence = calculateConfidence({
+    dataCompleteness: calculateDataCompleteness({
+      missingEvidenceCount: missingInformationFinal.length,
+      totalExpectedEvidence,
+    }),
+    evidenceStrength: calculateEvidenceStrength({
+      evidenceSignals: Math.min(6, metricEvidenceSignals + (thesisRisks.length > 0 ? 1 : 0) + (upsideOpportunities.length > 0 ? 1 : 0)),
+      totalEvidenceSignals: 8,
+      hasMarketData: marketDataAvailable,
+    }),
+    sourceQuality: calculateSourceQuality({
+      sourceTypes: [
+        ...factsFinal.map((item) => item.sourceType),
+        ...estimatesWithConfidence.map((item) => item.sourceType),
+      ],
+    }),
+  })
+
+  const recommendationFinding: AnalysisFindingItem = {
+    title: 'Investment recommendation confidence',
+    value: `Recommendation ${recommendationLabel(safeRecommendation)} with score ${overallScore}/100.`,
+    confidence: recommendationConfidence.confidence,
+    sourceType: 'ai_inference',
+    explanation: withConfidenceExplanation(executiveSummaryFinal, recommendationConfidence),
+  }
+
+  const factsWithRecommendation = [recommendationFinding, ...factsFinal]
 
   const dueDiligenceChecklist = [
     'Collect and validate at least three recent rental comps within the same micro-market.',
@@ -474,7 +708,11 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
   const executiveDecision = {
     recommendation: recommendationLabel(safeRecommendation),
     score: overallScore,
-    confidence: confidenceLabel(confidenceLevel),
+    confidence: confidenceLabel(
+      recommendationConfidence.confidence >= 80
+        ? 'high'
+        : recommendationConfidence.confidence >= 60 ? 'medium' : 'low',
+    ),
     summary: executiveSummaryFinal,
   }
 
@@ -555,23 +793,32 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
       threeYear: appreciation3y,
       fiveYear: appreciation5y,
     },
-    risks: keyRisks,
-    opportunities: keyUpsides,
+    risks: keyRisksInput,
+    opportunities: keyUpsidesInput,
     assumptions: assumptionsFinal,
     missingData: missingInformationFinal,
-    factsProvided: [...marketFacts, ...factsProvided],
+    findings: {
+      facts: factsWithRecommendation,
+      estimates: estimatesWithConfidence,
+      assumptions: assumptionsFindingsFinal,
+      risks: risksFindingsFinal,
+      opportunities: opportunitiesFindingsFinal,
+      missingEvidence: missingEvidenceSorted,
+    },
+    recommendationConfidence,
+    factsProvided: factsWithRecommendation.map((item) => item.value),
     assumptionsUsed: assumptionsFinal,
     estimates: estimatesFinal,
     confidenceLevel,
     investmentThesis: executiveSummaryFinal,
-    keyRisks,
-    keyUpsides,
+    keyRisks: keyRisksInput,
+    keyUpsides: keyUpsidesInput,
     missingInformation: missingInformationFinal,
     additionalDataToImproveAccuracy,
     scoringRules,
     fallbackDisclosure: usedDeterministicEstimate ? fallbackDisclosure : null,
     investorAnalysis: {
-      factsProvided: [...marketFacts, ...factsProvided],
+      factsProvided: factsWithRecommendation.map((item) => item.value),
       assumptionsUsed: assumptionsFinal,
       estimates: estimatesFinal,
       confidenceLevel,
@@ -608,8 +855,8 @@ const normalizeAnalysis = (raw: unknown, property: Record<string, unknown>, mark
         },
       },
       investmentThesis: executiveSummaryFinal,
-      keyRisks,
-      keyUpsides,
+      keyRisks: keyRisksInput,
+      keyUpsides: keyUpsidesInput,
       missingInformation: missingInformationFinal,
       additionalDataToImproveAccuracy,
       scoringRules,
@@ -698,9 +945,48 @@ const buildPrompt = (property: Record<string, unknown>, marketData: MarketDataBu
         missingData: ['string'],
       },
       reportText: 'string',
-      factsProvided: ['string'],
-      assumptionsUsed: ['string'],
-      estimates: ['string'],
+      facts: [{
+        title: 'Property asking price',
+        value: 'Asking price is 320000 EUR based on listing.',
+        confidence: 95,
+        sourceType: 'listing',
+        explanation: 'Listing includes clear asking price and currency.',
+      }],
+      estimates: [{
+        title: 'Long-term gross rental yield',
+        value: 'Estimated long-term gross rental yield is 5.4%.',
+        confidence: 68,
+        sourceType: 'ai_inference',
+        explanation: 'Yield derived from comparable assumptions and property context.',
+      }],
+      assumptions: [{
+        title: 'Occupancy stabilization',
+        value: 'Assumes occupancy stabilizes near local historical median.',
+        confidence: 60,
+        sourceType: 'ai_inference',
+        explanation: 'Assumption required due to limited direct occupancy evidence.',
+      }],
+      risks: [{
+        title: 'Regulatory changes',
+        value: 'Short-term rental regulation changes may reduce net yield.',
+        confidence: 71,
+        sourceType: 'ai_inference',
+        explanation: 'Regulatory uncertainty can materially impact STR strategy.',
+      }],
+      opportunities: [{
+        title: 'Value-add renovation upside',
+        value: 'Targeted renovation may improve rent and resale value.',
+        confidence: 66,
+        sourceType: 'ai_inference',
+        explanation: 'Condition profile suggests potential for margin expansion after upgrades.',
+      }],
+      missingEvidence: [{
+        title: 'Verified local rental comps',
+        value: 'At least three recent nearby rental comps are still missing.',
+        confidence: 35,
+        sourceType: 'ai_inference',
+        explanation: 'Without direct comps, confidence in rent/yield remains moderate to low.',
+      }],
       confidenceLevel: 'medium',
       metrics: {
         rentalYield: { value: null, confidence: 'medium', explanation: 'string' },
@@ -726,9 +1012,6 @@ const buildPrompt = (property: Record<string, unknown>, marketData: MarketDataBu
       airbnbPotential: { dailyRate: 110, occupancy: 64, monthlyRevenue: 2112, annualRevenue: 25344, percentage: 7.2 },
       renovationROI: { estimatedCost: 18000, valueIncrease: 31000, roi: 72.2 },
       appreciationPotential: { oneYear: 2.5, threeYear: 8.2, fiveYear: 14.1 },
-      risks: ['string'],
-      opportunities: ['string'],
-      assumptions: ['string'],
       missingData: ['string'],
     }),
   ].join('\n')

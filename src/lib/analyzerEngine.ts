@@ -1,5 +1,12 @@
 import type { Property, InvestmentAnalysis, InvestmentScore } from './types'
 import { deriveDeterministicEstimates } from './utils/deterministicEstimates'
+import {
+  calculateConfidence,
+  calculateDataCompleteness,
+  calculateEvidenceStrength,
+  calculateSourceQuality,
+} from '@/services/ai/confidenceEngine.service'
+import { generateMissingEvidence } from '@/services/ai/missingEvidenceEngine.service'
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 
@@ -10,6 +17,26 @@ const stableHash = (value: string): number => {
   }
   return hash
 }
+
+const findingTitle = (text: string, fallback: string): string => {
+  const trimmed = text.trim()
+  if (!trimmed) return fallback
+  if (trimmed.length <= 80) return trimmed
+  return `${trimmed.slice(0, 77)}...`
+}
+
+const toFinding = (
+  value: string,
+  fallback: string,
+  confidence: number,
+  sourceType: 'user_input' | 'listing' | 'uploaded_document' | 'portal' | 'market_api' | 'ai_inference' = 'ai_inference',
+) => ({
+  title: findingTitle(value, fallback),
+  value,
+  confidence,
+  sourceType,
+  explanation: value,
+})
 
 export function generateMockAnalysis(property: Property): InvestmentAnalysis {
   const deterministic = deriveDeterministicEstimates({
@@ -63,6 +90,57 @@ export function generateMockAnalysis(property: Property): InvestmentAnalysis {
   const valueIncrease = deterministic.renovationValueIncrease
 
   const recommendation = score.overall >= 75 ? 'buy' : score.overall >= 60 ? 'watch' : 'avoid'
+  const risks = generateRisks(property, score)
+  const opportunities = generateOpportunities(property, score)
+  const assumptions = [
+    `Deterministic fallback estimate model used because live market API data is unavailable.`,
+    `Rent and yield estimates derived from asking price, size, city, country, bedrooms, condition, and currency.`,
+    `Airbnb assumptions are scenario estimates using city tourism proxy factors and occupancy bands.`,
+    `Renovation ROI is estimate-only and should be validated with contractor quotes.`,
+  ]
+  const missingData = [
+    'Exact property tax assessment',
+    'Building age and structural condition report',
+    'Neighborhood development plans',
+  ]
+
+  const engineMissingEvidence = generateMissingEvidence({
+    hasMarketRentalData: false,
+    hasMarketTransactionData: false,
+    hasLegalEvidence: false,
+    hasEnergyEvidence: property.condition === 'new' || property.condition === 'excellent',
+    needsRenovation: property.condition === 'needs-renovation',
+  })
+
+  const recommendationConfidence = calculateConfidence({
+    dataCompleteness: calculateDataCompleteness({
+      missingEvidenceCount: missingData.length,
+      totalExpectedEvidence: 8,
+    }),
+    evidenceStrength: calculateEvidenceStrength({
+      evidenceSignals: 6,
+      totalEvidenceSignals: 8,
+      hasMarketData: false,
+    }),
+    sourceQuality: calculateSourceQuality({ sourceTypes: ['user_input', 'ai_inference'] }),
+  })
+
+  const estimateConfidence = calculateConfidence({
+    dataCompleteness: calculateDataCompleteness({
+      missingEvidenceCount: missingData.length,
+      totalExpectedEvidence: 8,
+    }),
+    evidenceStrength: calculateEvidenceStrength({
+      evidenceSignals: 4,
+      totalEvidenceSignals: 6,
+      hasMarketData: false,
+    }),
+    sourceQuality: calculateSourceQuality({ sourceTypes: ['ai_inference'] }),
+  })
+
+  const explainConfidence = (base: string, confidence: { dataCompleteness: number; evidenceStrength: number; sourceQuality: number }) => {
+    return `${base} Confidence inputs: dataCompleteness=${confidence.dataCompleteness}, evidenceStrength=${confidence.evidenceStrength}, sourceQuality=${confidence.sourceQuality}.`
+  }
 
   return {
     id: `analysis-${Date.now()}`,
@@ -93,19 +171,50 @@ export function generateMockAnalysis(property: Property): InvestmentAnalysis {
       threeYear: deterministic.appreciationThreeYearPct,
       fiveYear: deterministic.appreciationFiveYearPct,
     },
-    risks: generateRisks(property, score),
-    opportunities: generateOpportunities(property, score),
-    assumptions: [
-      `Deterministic fallback estimate model used because live market API data is unavailable.`,
-      `Rent and yield estimates derived from asking price, size, city, country, bedrooms, condition, and currency.`,
-      `Airbnb assumptions are scenario estimates using city tourism proxy factors and occupancy bands.`,
-      `Renovation ROI is estimate-only and should be validated with contractor quotes.`
-    ],
-    missingData: [
-      'Exact property tax assessment',
-      'Building age and structural condition report',
-      'Neighborhood development plans'
-    ],
+    risks,
+    opportunities,
+    assumptions,
+    missingData,
+    findings: {
+      facts: [
+        {
+          ...toFinding(
+            `Recommendation ${recommendation.toUpperCase()} at score ${score.overall}/100`,
+            'Investment Recommendation',
+            recommendationConfidence.confidence,
+            'ai_inference',
+          ),
+          explanation: explainConfidence(
+            `Recommendation ${recommendation.toUpperCase()} based on deterministic model score ${score.overall}/100.`,
+            recommendationConfidence,
+          ),
+        },
+        toFinding(`Property type: ${property.propertyType}`, 'Property Type', 90, 'user_input'),
+        toFinding(`Location: ${property.district}, ${property.city}, ${property.country}`, 'Location', 90, 'user_input'),
+        toFinding(`Asking price: ${property.askingPrice} ${property.currency}`, 'Asking Price', 92, 'listing'),
+      ],
+      estimates: [
+        {
+          ...toFinding(`Estimated long-term rental yield: ${rentalYield.toFixed(1)}%`, 'Rental Yield Estimate', estimateConfidence.confidence),
+          explanation: explainConfidence(`Estimated long-term rental yield: ${rentalYield.toFixed(1)}%.`, estimateConfidence),
+        },
+        {
+          ...toFinding(`Estimated Airbnb yield: ${airbnbYield.toFixed(1)}%`, 'Airbnb Yield Estimate', estimateConfidence.confidence),
+          explanation: explainConfidence(`Estimated Airbnb yield: ${airbnbYield.toFixed(1)}%.`, estimateConfidence),
+        },
+        {
+          ...toFinding(`Estimated renovation ROI: ${deterministic.renovationRoiPct.toFixed(1)}%`, 'Renovation ROI Estimate', estimateConfidence.confidence),
+          explanation: explainConfidence(`Estimated renovation ROI: ${deterministic.renovationRoiPct.toFixed(1)}%.`, estimateConfidence),
+        },
+      ],
+      assumptions: assumptions.map((item, index) => toFinding(item, `Assumption ${index + 1}`, 55)),
+      risks: risks.map((item, index) => toFinding(item, `Risk ${index + 1}`, 66)),
+      opportunities: opportunities.map((item, index) => toFinding(item, `Opportunity ${index + 1}`, 70)),
+      missingEvidence: engineMissingEvidence.length > 0
+        ? engineMissingEvidence
+        : missingData.map((item, index) => toFinding(item, `Missing Evidence ${index + 1}`, 30)),
+    },
+    recommendationConfidence,
     analyzedAt: new Date().toISOString()
   }
 }

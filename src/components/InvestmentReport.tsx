@@ -4,6 +4,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { ScoreGauge } from './ScoreGauge'
+import { DataQualityCard } from './DataQualityCard'
+import { EvidenceExplorer } from './EvidenceExplorer'
+import { MissingEvidenceSection } from './MissingEvidenceSection'
 import type { InvestmentAnalysis } from '@/lib/types'
 import { mockAnalyses } from '@/lib/mockData'
 import { cn } from '@/lib/utils'
@@ -269,6 +272,14 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Investment Score</p>
                 <p className="mt-1 text-3xl font-bold">{executiveDecision.score}/100</p>
                 <Badge className="mt-2 border-none bg-accent/15 text-accent">{executiveDecision.recommendation}</Badge>
+                <div className="mt-2 flex justify-end">
+                  <EvidenceExplorer
+                    analysis={report}
+                    topic="investment_score"
+                    label="Investment Score"
+                    valueText={`${executiveDecision.score}/100`}
+                  />
+                </div>
               </div>
             </div>
             <p className="mt-4 text-sm text-muted-foreground">Confidence: <span className="font-semibold text-foreground">{executiveDecision.confidence}</span></p>
@@ -325,6 +336,14 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
             <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimated Monthly Rent</p>
               <p className="mt-1 text-lg font-semibold">{formatCurrency(financialModel.estimatedMonthlyRent, reportCurrency)}</p>
+              <div className="mt-2">
+                <EvidenceExplorer
+                  analysis={report}
+                  topic="rental_estimate"
+                  label="Rental Estimate"
+                  valueText={formatCurrency(financialModel.estimatedMonthlyRent, reportCurrency)}
+                />
+              </div>
             </div>
             <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Annual Rent</p>
@@ -333,6 +352,14 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
             <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Gross Rental Yield</p>
               <p className="mt-1 text-lg font-semibold">{financialModel.grossRentalYield}%</p>
+              <div className="mt-2">
+                <EvidenceExplorer
+                  analysis={report}
+                  topic="yield"
+                  label="Yield"
+                  valueText={`${financialModel.grossRentalYield}%`}
+                />
+              </div>
             </div>
             <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Airbnb Yield</p>
@@ -341,6 +368,14 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
             <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Estimated ROI</p>
               <p className="mt-1 text-lg font-semibold">{financialModel.estimatedROI}%</p>
+              <div className="mt-2">
+                <EvidenceExplorer
+                  analysis={report}
+                  topic="roi"
+                  label="ROI"
+                  valueText={`${financialModel.estimatedROI}%`}
+                />
+              </div>
             </div>
             <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">5-Year Projected Value</p>
@@ -442,34 +477,7 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
-          <div className="flex items-center gap-2">
-            <ShieldWarning className="h-5 w-5 text-accent" weight="duotone" />
-            <h2 className="text-lg font-semibold">Data Quality</h2>
-          </div>
-          <div className="mt-4 space-y-3 text-sm">
-            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Live Market Data</p>
-              <p className="mt-1 font-semibold">{dataQuality.usedLiveMarketData ? 'Used' : 'Not Used'}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Deterministic Fallback</p>
-              <p className="mt-1 text-muted-foreground">{dataQuality.usedDeterministicFallback ? 'Applied' : 'Not Applied'}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Confidence Level</p>
-              <p className="mt-1 text-muted-foreground">{dataQuality.confidenceLevel}</p>
-            </div>
-            <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Missing Data</p>
-              <ul className="mt-1 space-y-1 text-muted-foreground">
-                {dataQuality.missingData.slice(0, 4).map((item) => (
-                  <li key={item} className="flex items-start gap-2"><span>•</span><span>{item}</span></li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </Card>
+        <DataQualityCard analysis={report} className="h-full" />
 
         <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
           <div className="flex items-center gap-2">
@@ -494,6 +502,8 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
         </Card>
       </div>
 
+      <MissingEvidenceSection analysis={report} />
+
       <Card className="border-border/70 p-6 print:border-slate-300 print:shadow-none">
         <div className="flex items-center gap-2">
           <Sparkle className="h-5 w-5 text-accent" weight="duotone" />
@@ -512,6 +522,14 @@ export function InvestmentReport({ analysis, onBack, title, location, askingPric
           <div className="rounded-lg border border-border/60 p-3 print:border-slate-300">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Recommendation</p>
             <Badge className="mt-2 border-none bg-accent/15 text-accent">{executiveDecision.recommendation}</Badge>
+            <div className="mt-2">
+              <EvidenceExplorer
+                analysis={report}
+                topic="recommendation"
+                label="Recommendation"
+                valueText={executiveDecision.recommendation}
+              />
+            </div>
           </div>
         </div>
       </Card>

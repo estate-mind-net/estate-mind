@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Buildings, CircleNotch, ClockCounterClockwise, MapPin, Sparkle, TrendUp, Warning } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +7,9 @@ import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ScoreGauge } from '@/components/ScoreGauge'
+import { DataQualityCard } from '@/components/DataQualityCard'
+import { EvidenceExplorer } from '@/components/EvidenceExplorer'
+import { MissingEvidenceSection } from '@/components/MissingEvidenceSection'
 import { useAuth } from '@/hooks/useAuth'
 import { opportunityStageLabels, opportunityStages, type OpportunityStage } from '@/lib/constants/opportunityStages'
 import { opportunityWorkspaceService, type OpportunityWorkspaceDetail } from '@/services/supabase/opportunityWorkspace.service'
@@ -56,10 +59,13 @@ function LoadingState() {
   )
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
+function InfoBlock({ label, value, action }: { label: string; value: string; action?: ReactNode }) {
   return (
     <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+        {action}
+      </div>
       <p className="mt-2 text-base font-semibold">{value}</p>
     </div>
   )
@@ -420,17 +426,72 @@ export function OpportunityDetailPage() {
                   <ScoreGauge score={snapshotDecision?.score ?? latestAnalysis.score.overall} size="sm" showLabel={false} />
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <InfoBlock label="Recommendation" value={snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)} />
-                  <InfoBlock label="Investment Score" value={`${snapshotDecision?.score ?? latestAnalysis.score.overall}/100`} />
+                  <InfoBlock
+                    label="Recommendation"
+                    value={snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)}
+                    action={(
+                      <EvidenceExplorer
+                        analysis={latestAnalysis}
+                        topic="recommendation"
+                        label="Recommendation"
+                        valueText={snapshotDecision?.recommendation ?? toRecommendationLabel(latestAnalysis.recommendation)}
+                      />
+                    )}
+                  />
+                  <InfoBlock
+                    label="Investment Score"
+                    value={`${snapshotDecision?.score ?? latestAnalysis.score.overall}/100`}
+                    action={(
+                      <EvidenceExplorer
+                        analysis={latestAnalysis}
+                        topic="investment_score"
+                        label="Investment Score"
+                        valueText={`${snapshotDecision?.score ?? latestAnalysis.score.overall}/100`}
+                      />
+                    )}
+                  />
                   <InfoBlock label="Confidence" value={snapshotDecision?.confidence ?? confidenceLevel ?? 'Medium'} />
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <InfoBlock label="Estimated Monthly Rent" value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate?.monthly ?? item.expectedMonthlyRent)} />
-                <InfoBlock label="Rental Yield" value={`${safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)}%`} />
+                <InfoBlock
+                  label="Estimated Monthly Rent"
+                  value={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate?.monthly ?? item.expectedMonthlyRent)}
+                  action={(
+                    <EvidenceExplorer
+                      analysis={latestAnalysis}
+                      topic="rental_estimate"
+                      label="Rental Estimate"
+                      valueText={formatCurrency(item.currency, latestAnalysis.rentalYieldEstimate?.monthly ?? item.expectedMonthlyRent)}
+                    />
+                  )}
+                />
+                <InfoBlock
+                  label="Rental Yield"
+                  value={`${safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)}%`}
+                  action={(
+                    <EvidenceExplorer
+                      analysis={latestAnalysis}
+                      topic="yield"
+                      label="Yield"
+                      valueText={`${safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0)}%`}
+                    />
+                  )}
+                />
                 <InfoBlock label="Airbnb Yield" value={`${safeNumber(latestAnalysis.airbnbPotential?.percentage, 0)}%`} />
-                <InfoBlock label="ROI Estimate" value={`${(safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0) + safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)).toFixed(2)}%`} />
+                <InfoBlock
+                  label="ROI Estimate"
+                  value={`${(safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0) + safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)).toFixed(2)}%`}
+                  action={(
+                    <EvidenceExplorer
+                      analysis={latestAnalysis}
+                      topic="roi"
+                      label="ROI"
+                      valueText={`${(safeNumber(latestAnalysis.rentalYieldEstimate?.percentage, 0) + safeNumber(latestAnalysis.appreciationPotential?.oneYear, 0)).toFixed(2)}%`}
+                    />
+                  )}
+                />
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
@@ -462,6 +523,9 @@ export function OpportunityDetailPage() {
                   </tbody>
                 </table>
               </div>
+
+              <DataQualityCard analysis={latestAnalysis} />
+              <MissingEvidenceSection analysis={latestAnalysis} />
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-border/60 bg-background/60 p-4 text-sm">
@@ -499,6 +563,9 @@ export function OpportunityDetailPage() {
               </div>
 
               <div className="space-y-2">
+                <Button variant="outline" className="w-full" onClick={() => navigate(`/opportunities/${item.id}/due-diligence`)}>
+                  Open Due Diligence
+                </Button>
                 <Button className="w-full" onClick={() => navigate(`/opportunities/${item.id}/report`)}>
                   View Full Investment Report
                 </Button>

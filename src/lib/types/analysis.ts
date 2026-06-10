@@ -1,4 +1,5 @@
 import type { Property } from './property'
+import type { AiFindingSourceType } from './aiFinding'
 
 export type InvestmentRecommendation = 'buy' | 'watch' | 'avoid'
 
@@ -86,6 +87,41 @@ export interface DataQuality {
   missingData: string[]
 }
 
+export interface ConfidenceBreakdown {
+  confidence: number
+  dataCompleteness: number
+  evidenceStrength: number
+  sourceQuality: number
+}
+
+export type MissingEvidenceSeverity = 'critical' | 'important' | 'optional'
+
+export interface AnalysisFindingItem {
+  title: string
+  value: string
+  confidence: number | null
+  sourceType: AiFindingSourceType
+  explanation: string
+  severity?: MissingEvidenceSeverity
+}
+
+export type AnalysisFindingBucket =
+  | 'facts'
+  | 'estimates'
+  | 'assumptions'
+  | 'risks'
+  | 'opportunities'
+  | 'missingEvidence'
+
+export interface AnalysisFindings {
+  facts: AnalysisFindingItem[]
+  estimates: AnalysisFindingItem[]
+  assumptions: AnalysisFindingItem[]
+  risks: AnalysisFindingItem[]
+  opportunities: AnalysisFindingItem[]
+  missingEvidence: AnalysisFindingItem[]
+}
+
 export interface InvestmentAnalysis {
   id: string
   propertyId: string
@@ -101,6 +137,8 @@ export interface InvestmentAnalysis {
   opportunities: string[]
   assumptions: string[]
   missingData: string[]
+  findings?: AnalysisFindings
+  recommendationConfidence?: ConfidenceBreakdown
   confidenceLevel?: AnalysisConfidenceLevel
   executiveDecision?: ExecutiveDecision
   financialModel?: FinancialModel
