@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { scoreRentalApartment } from '../services/rentScoring'
 import { generateRentAnalysis } from '../services/rentAnalysis'
 import type { RentAnalysisResult } from '../services/rentAnalysis'
+import { getLatestRentAnalysis, saveRentAnalysis, replaceRentAnalysisFindings } from '../services/rentAnalysisPersistence'
 import { RentAnalysisReport } from '../components/RentAnalysisReport'
 import { getUserApartmentById, deleteUserApartment, isUserApartment, updateApartmentStatus } from '../services/rentStorage'
 import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
@@ -28,6 +29,7 @@ export function RentOpportunityDetailPage() {
 
   const [refreshKey, setRefreshKey] = useState(0)
   const [analysis, setAnalysis] = useState<RentAnalysisResult | null>(null)
+  const [analysisGeneratedAt, setAnalysisGeneratedAt] = useState<string | null>(null)
   const [cloudApartment, setCloudApartment] = useState<RentalApartment | null>(null)
   const [source, setSource] = useState<ApartmentSource>('demo')
   const [loading, setLoading] = useState(true)
@@ -61,6 +63,21 @@ export function RentOpportunityDetailPage() {
       if (cloud) {
         setCloudApartment(cloud)
         setSource('cloud')
+
+        // Try loading saved analysis for cloud-backed apartments
+        if (organization?.id) {
+          try {
+            const analysisResult = await getLatestRentAnalysis(id!, {
+              organizationId: organization.id,
+            })
+            if (!cancelled && analysisResult.success && analysisResult.data) {
+              setAnalysis(analysisResult.data)
+              setAnalysisGeneratedAt('Previously saved')
+            }
+          } catch {
+            // No saved analysis, user will generate on demand
+          }
+        }
       } else {
         // Fallback: localStorage then sample
         const local = getUserApartmentById(id!)
@@ -109,11 +126,29 @@ export function RentOpportunityDetailPage() {
     setRefreshKey((k) => k + 1)
   }
 
-  const handleGenerateAnalysis = () => {
+  const handleGenerateAnalysis = async () => {
     if (!apartment) return
     const result = generateRentAnalysis(apartment, DEFAULT_RENT_PREFERENCES)
     setAnalysis(result)
-    toast.success('Analysis generated.')
+    setAnalysisGeneratedAt(null)
+
+    if (source === 'cloud' && organization?.id && id) {
+      const ctx = { organizationId: organization.id }
+      const [noteResult, findingsResult] = await Promise.all([
+        saveRentAnalysis(id, result, apartment, DEFAULT_RENT_PREFERENCES, ctx),
+        replaceRentAnalysisFindings(id, result, ctx),
+      ])
+
+      if (noteResult.success && findingsResult.success) {
+        toast.success('Analysis generated and saved to cloud.')
+        setAnalysisGeneratedAt('Saved to cloud')
+      } else {
+        const errMsg = noteResult.error ?? findingsResult.error ?? 'Unknown error'
+        toast.warning(`Analysis generated but not saved: ${errMsg}`)
+      }
+    } else {
+      toast.success('Analysis generated.')
+    }
   }
 
   const handleDelete = () => {
@@ -322,11 +357,20 @@ export function RentOpportunityDetailPage() {
       <div className="flex justify-center">
         <Button onClick={handleGenerateAnalysis} className="bg-accent text-accent-foreground hover:bg-accent/90">
           <Brain className="mr-2 h-4 w-4" />
-          {analysis ? 'Regenerate Analysis' : 'Generate Rent Analysis'}
+          {analysis ? 'Regenerate Rent Analysis' : 'Generate Rent Analysis'}
         </Button>
       </div>
 
-      {analysis && <RentAnalysisReport analysis={analysis} />}
+      {analysis && (
+        <div className="space-y-2">
+          {analysisGeneratedAt && (
+            <p className="text-xs text-muted-foreground text-center">
+              {analysisGeneratedAt}
+            </p>
+          )}
+          <RentAnalysisReport analysis={analysis} />
+        </div>
+      )}
 
       {notes && (
         <Card className="p-6 space-y-2">

@@ -1,3 +1,17 @@
+/**
+ * rentStorage.ts — localStorage fallback for Rent module.
+ *
+ * This module provides browser-local persistence for rental apartments.
+ * It is used as a fallback when Supabase is unavailable, the user has no
+ * organization context, or the cloud adapter fails.
+ *
+ * Primary persistence is now handled by rentSupabaseAdapter.ts, which maps
+ * RentalApartment to the shared properties + opportunities tables via
+ * OpportunityWorkspaceService module-aware methods.
+ *
+ * DO NOT DELETE — still used as fallback and for demo/offline mode.
+ */
+
 import type { RentalApartment, RentalStatus } from '../types'
 
 function normalizeApartment(a: RentalApartment): RentalApartment {
