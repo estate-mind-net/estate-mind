@@ -31,6 +31,19 @@ import { OpportunityHunterDashboardPage } from '@/pages/OpportunityHunterDashboa
 import { OpportunityHunterFormPage } from '@/pages/OpportunityHunterFormPage'
 import { OpportunityHunterDetailPage } from '@/pages/OpportunityHunterDetailPage'
 import { OpportunityHunterRunDetailPage } from '@/pages/OpportunityHunterRunDetailPage'
+import { RentDashboardPage } from '@/modules/rent/pages/RentDashboardPage'
+import { NewRentOpportunityPage } from '@/modules/rent/pages/NewRentOpportunityPage'
+import { RentOpportunityDetailPage } from '@/modules/rent/pages/RentOpportunityDetailPage'
+import { EditRentOpportunityPage } from '@/modules/rent/pages/EditRentOpportunityPage'
+import { RentComparisonPage } from '@/modules/rent/pages/RentComparisonPage'
+import { BuyDashboardPage } from '@/modules/buy/pages/BuyDashboardPage'
+import { InvestDashboardPage } from '@/modules/invest/pages/InvestDashboardPage'
+import { BuildDashboardPage } from '@/modules/build/pages/BuildDashboardPage'
+import { RenovateDashboardPage } from '@/modules/renovate/pages/RenovateDashboardPage'
+import { AirbnbDashboardPage } from '@/modules/airbnb/pages/AirbnbDashboardPage'
+import { DueDiligenceModulePage } from '@/modules/due-diligence/pages/DueDiligenceModulePage'
+import { EnergyDashboardPage } from '@/modules/energy/pages/EnergyDashboardPage'
+import { PortfolioModulePage } from '@/modules/portfolio/pages/PortfolioModulePage'
 import { useAuth } from '@/hooks/useAuth'
 import { generateMockAnalysis } from '@/lib/analyzerEngine'
 import { generateDealAnalysis } from '@/services/api/dealAnalysis.service'
@@ -256,6 +269,20 @@ function App() {
           />
           <Route path="/portfolio" element={<WorkspaceShell><PortfolioDashboard /></WorkspaceShell>} />
           <Route path="/analytics" element={<WorkspaceShell><PortfolioAnalytics onBack={() => navigate('/dashboard')} /></WorkspaceShell>} />
+
+          <Route path="/rent" element={<WorkspaceShell><RentDashboardPage /></WorkspaceShell>} />
+          <Route path="/rent/new" element={<WorkspaceShell><NewRentOpportunityPage /></WorkspaceShell>} />
+          <Route path="/rent/compare" element={<WorkspaceShell><RentComparisonPage /></WorkspaceShell>} />
+          <Route path="/rent/:id" element={<WorkspaceShell><RentOpportunityDetailPage /></WorkspaceShell>} />
+          <Route path="/rent/:id/edit" element={<WorkspaceShell><EditRentOpportunityPage /></WorkspaceShell>} />
+          <Route path="/buy" element={<WorkspaceShell><BuyDashboardPage /></WorkspaceShell>} />
+          <Route path="/invest" element={<WorkspaceShell><InvestDashboardPage /></WorkspaceShell>} />
+          <Route path="/build" element={<WorkspaceShell><BuildDashboardPage /></WorkspaceShell>} />
+          <Route path="/renovate" element={<WorkspaceShell><RenovateDashboardPage /></WorkspaceShell>} />
+          <Route path="/airbnb" element={<WorkspaceShell><AirbnbDashboardPage /></WorkspaceShell>} />
+          <Route path="/due-diligence" element={<WorkspaceShell><DueDiligenceModulePage /></WorkspaceShell>} />
+          <Route path="/energy" element={<WorkspaceShell><EnergyDashboardPage /></WorkspaceShell>} />
+          <Route path="/portfolio-intelligence" element={<WorkspaceShell><PortfolioModulePage /></WorkspaceShell>} />
         </Route>
 
         <Route path="/presentation" element={<PresentationPage onExit={() => navigate('/')} />} />

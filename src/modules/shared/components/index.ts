@@ -1,0 +1,1 @@
+// Shared module components will be extracted here in Phase 2.

@@ -1,5 +1,23 @@
 import type { Icon } from '@phosphor-icons/react'
-import { Brain, Buildings, Compass, CurrencyDollar, Gear, House, PlusSquare, SignOut } from '@phosphor-icons/react'
+import {
+  Bed,
+  Brain,
+  Buildings,
+  Compass,
+  CurrencyDollar,
+  Factory,
+  Gear,
+  Hammer,
+  House,
+  HouseLine,
+  Lightning,
+  MagnifyingGlass,
+  PlusSquare,
+  ShieldCheck,
+  SignOut,
+  SolarPanel,
+  TrendUp,
+} from '@phosphor-icons/react'
 
 export interface NavItemConfig {
   key: string
@@ -59,6 +77,66 @@ export const navigationSections: NavSectionConfig[] = [
         label: 'AI Reports',
         to: '/reports',
         icon: Brain,
+      },
+    ],
+  },
+  {
+    key: 'modules',
+    title: 'MODULES',
+    items: [
+      {
+        key: 'module-rent',
+        label: 'Rent',
+        to: '/rent',
+        icon: HouseLine,
+      },
+      {
+        key: 'module-buy',
+        label: 'Buy',
+        to: '/buy',
+        icon: MagnifyingGlass,
+      },
+      {
+        key: 'module-invest',
+        label: 'Invest',
+        to: '/invest',
+        icon: TrendUp,
+      },
+      {
+        key: 'module-build',
+        label: 'Build',
+        to: '/build',
+        icon: Factory,
+      },
+      {
+        key: 'module-renovate',
+        label: 'Renovate',
+        to: '/renovate',
+        icon: Hammer,
+      },
+      {
+        key: 'module-airbnb',
+        label: 'Airbnb',
+        to: '/airbnb',
+        icon: Bed,
+      },
+      {
+        key: 'module-due-diligence',
+        label: 'Due Diligence',
+        to: '/due-diligence',
+        icon: ShieldCheck,
+      },
+      {
+        key: 'module-energy',
+        label: 'Energy',
+        to: '/energy',
+        icon: SolarPanel,
+      },
+      {
+        key: 'module-portfolio-intelligence',
+        label: 'Portfolio Intelligence',
+        to: '/portfolio-intelligence',
+        icon: Lightning,
       },
     ],
   },

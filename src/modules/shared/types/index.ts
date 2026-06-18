@@ -1,0 +1,1 @@
+export type { ModuleId, ModuleConfig } from './module'

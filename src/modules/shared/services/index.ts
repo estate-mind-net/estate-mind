@@ -1,0 +1,1 @@
+// Shared module services will be extracted here in Phase 2.
