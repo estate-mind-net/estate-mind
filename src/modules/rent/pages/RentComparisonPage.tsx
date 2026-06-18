@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from '@phosphor-icons/react'
+import { ArrowLeft, Cloud, Database } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -8,9 +8,13 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { scoreRentalApartment } from '../services/rentScoring'
 import { loadUserApartments } from '../services/rentStorage'
+import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
 import { SAMPLE_APARTMENTS } from '../data/sampleApartments'
 import { DEFAULT_RENT_PREFERENCES, RENTAL_STATUS_LABELS } from '../types'
 import type { RentalApartment, RentRecommendation, RentalStatus } from '../types'
+import { useAuth } from '@/hooks/useAuth'
+
+type DataSource = 'cloud' | 'local' | 'mixed' | 'demo'
 
 const statusVariant: Record<RentalStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   new: 'outline',
@@ -30,11 +34,52 @@ const recommendationVariant: Record<RentRecommendation, 'default' | 'secondary' 
 
 export function RentComparisonPage() {
   const navigate = useNavigate()
+  const { user, organization } = useAuth()
+
+  const [userApartments, setUserApartments] = useState<RentalApartment[]>([])
+  const [dataSource, setDataSource] = useState<DataSource>('demo')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load() {
+      setLoading(true)
+
+      // Try cloud first
+      if (organization?.id && user?.id) {
+        try {
+          const result = await rentSupabaseAdapter.listRentApartments({
+            organizationId: organization.id,
+            userId: user.id,
+          })
+          if (!cancelled && result.success && result.data && result.data.length > 0) {
+            setUserApartments(result.data)
+            setDataSource('cloud')
+            setLoading(false)
+            return
+          }
+        } catch {
+          // fall through
+        }
+      }
+
+      // Fallback to localStorage
+      if (!cancelled) {
+        const local = loadUserApartments()
+        setUserApartments(local)
+        setDataSource(local.length > 0 ? 'local' : 'demo')
+        setLoading(false)
+      }
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [organization?.id, user?.id])
 
   const allApartments = useMemo(() => {
-    const userApartments = loadUserApartments()
     return [...SAMPLE_APARTMENTS, ...userApartments]
-  }, [])
+  }, [userApartments])
 
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
@@ -80,9 +125,14 @@ export function RentComparisonPage() {
         Back to Rent
       </Button>
 
-      <div>
-        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Compare Apartments</h1>
-        <p className="mt-2 text-sm text-foreground/70">Select 2 to 5 apartments to compare side by side.</p>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Compare Apartments</h1>
+          {dataSource === 'cloud' && <Badge variant="default" className="gap-1"><Cloud className="h-3 w-3" /> Cloud</Badge>}
+          {dataSource === 'local' && <Badge variant="secondary" className="gap-1"><Database className="h-3 w-3" /> Local</Badge>}
+          {dataSource === 'demo' && <Badge variant="secondary">Demo</Badge>}
+        </div>
+        <p className="text-sm text-foreground/70">Select 2 to 5 apartments to compare side by side.</p>
       </div>
 
       <Card className="p-6 space-y-4">

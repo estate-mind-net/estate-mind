@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, FloppyDisk } from '@phosphor-icons/react'
+import { ArrowLeft, Cloud, Database, FloppyDisk } from '@phosphor-icons/react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,8 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getUserApartmentById, updateUserApartment, isUserApartment } from '../services/rentStorage'
+import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
 import { SAMPLE_APARTMENTS } from '../data/sampleApartments'
 import type { RentalApartment } from '../types'
+import { useAuth } from '@/hooks/useAuth'
+
+type ApartmentSource = 'cloud' | 'local' | 'demo'
 
 type FormData = {
   title: string
@@ -62,21 +67,60 @@ function apartmentToForm(apartment: RentalApartment): FormData {
 export function EditRentOpportunityPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user, organization } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
   const [formData, setFormData] = useState<FormData | null>(null)
-
-  const apartment = useMemo(() => {
-    if (!id) return null
-    const userApartment = getUserApartmentById(id)
-    if (userApartment) return userApartment
-    return SAMPLE_APARTMENTS.find((a) => a.id === id) ?? null
-  }, [id])
+  const [apartment, setApartment] = useState<RentalApartment | null>(null)
+  const [source, setSource] = useState<ApartmentSource>('demo')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (apartment) {
-      setFormData(apartmentToForm(apartment))
+    if (!id) { setLoading(false); return }
+
+    let cancelled = false
+
+    async function load() {
+      // Try cloud first
+      if (organization?.id && user?.id) {
+        try {
+          const result = await rentSupabaseAdapter.getRentApartmentById(id!, {
+            organizationId: organization.id,
+            userId: user.id,
+          })
+          if (!cancelled && result.success && result.data) {
+            setApartment(result.data)
+            setSource('cloud')
+            setFormData(apartmentToForm(result.data))
+            setLoading(false)
+            return
+          }
+        } catch {
+          // fall through
+        }
+      }
+
+      // Fallback: localStorage then demo
+      if (!cancelled) {
+        const local = getUserApartmentById(id!)
+        if (local) {
+          setApartment(local)
+          setSource('local')
+          setFormData(apartmentToForm(local))
+        } else {
+          const demo = SAMPLE_APARTMENTS.find((a) => a.id === id) ?? null
+          if (demo) {
+            setApartment(demo)
+            setSource('demo')
+            setFormData(apartmentToForm(demo))
+          }
+        }
+        setLoading(false)
+      }
     }
-  }, [apartment])
+
+    load()
+    return () => { cancelled = true }
+  }, [id, organization?.id, user?.id])
 
   const updateText = (key: keyof FormData, value: string) => {
     setFormData((prev) => (prev ? { ...prev, [key]: value } : prev))
@@ -86,7 +130,7 @@ export function EditRentOpportunityPage() {
     setFormData((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData || !apartment) return
 
@@ -97,41 +141,75 @@ export function EditRentOpportunityPage() {
 
     setIsSaving(true)
 
-    try {
-      const updated: RentalApartment = {
-        ...apartment,
-        title: formData.title.trim(),
-        city: formData.city.trim(),
-        district: formData.district.trim(),
-        address: formData.address.trim() || undefined,
-        monthlyRent: Number(formData.monthlyRent),
-        currency: formData.currency,
-        sizeM2: Number(formData.sizeM2),
-        bedrooms: Number(formData.bedrooms),
-        furnished: formData.furnished,
-        parking: formData.parking,
-        balcony: formData.balcony,
-        elevator: formData.elevator,
-        petsAllowed: formData.petsAllowed,
-        floor: formData.floor ? Number(formData.floor) : undefined,
-        listingUrl: formData.listingUrl.trim() || undefined,
-        notes: formData.notes.trim() || undefined,
-        contactName: formData.contactName.trim() || undefined,
-        contactPhone: formData.contactPhone.trim() || undefined,
-        nextAction: formData.nextAction.trim() || undefined,
-      }
+    const updated: RentalApartment = {
+      ...apartment,
+      title: formData.title.trim(),
+      city: formData.city.trim(),
+      district: formData.district.trim(),
+      address: formData.address.trim() || undefined,
+      monthlyRent: Number(formData.monthlyRent),
+      currency: formData.currency,
+      sizeM2: Number(formData.sizeM2),
+      bedrooms: Number(formData.bedrooms),
+      furnished: formData.furnished,
+      parking: formData.parking,
+      balcony: formData.balcony,
+      elevator: formData.elevator,
+      petsAllowed: formData.petsAllowed,
+      floor: formData.floor ? Number(formData.floor) : undefined,
+      listingUrl: formData.listingUrl.trim() || undefined,
+      notes: formData.notes.trim() || undefined,
+      contactName: formData.contactName.trim() || undefined,
+      contactPhone: formData.contactPhone.trim() || undefined,
+      nextAction: formData.nextAction.trim() || undefined,
+    }
 
-      updateUserApartment(updated)
-      toast.success('Listing updated.')
-      navigate(`/rent/${updated.id}`)
+    try {
+      if (source === 'cloud' && organization?.id) {
+        const result = await rentSupabaseAdapter.updateRentApartment(updated, {
+          organizationId: organization.id,
+          userId: user?.id ?? '',
+        })
+        if (result.success) {
+          toast.success('Listing updated in cloud.')
+          navigate(`/rent/${updated.id}`)
+          return
+        }
+        toast.error(result.error ?? 'Failed to update in cloud.')
+      } else {
+        updateUserApartment(updated)
+        toast.success('Listing updated.')
+        navigate(`/rent/${updated.id}`)
+      }
     } catch {
-      toast.error('Failed to update. Please try again.')
+      // Fallback to localStorage
+      try {
+        updateUserApartment(updated)
+        toast.success('Listing updated locally.')
+        navigate(`/rent/${updated.id}`)
+      } catch {
+        toast.error('Failed to update. Please try again.')
+      }
     } finally {
       setIsSaving(false)
     }
   }
 
-  if (!id || !isUserApartment(id)) {
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <Button variant="ghost" onClick={() => navigate('/rent')} className="-ml-2">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Rent
+        </Button>
+        <Card className="p-10 text-center">
+          <p className="text-muted-foreground">Loading apartment...</p>
+        </Card>
+      </div>
+    )
+  }
+
+  if (source === 'demo') {
     return (
       <div className="mx-auto max-w-3xl space-y-6">
         <Button variant="ghost" onClick={() => navigate('/rent')} className="-ml-2">
@@ -173,9 +251,13 @@ export function EditRentOpportunityPage() {
         </Button>
       </div>
 
-      <div>
-        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Edit Listing</h1>
-        <p className="mt-2 text-sm text-foreground/70">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Edit Listing</h1>
+          {source === 'cloud' && <Badge variant="default" className="gap-1"><Cloud className="h-3 w-3" /> Cloud</Badge>}
+          {source === 'local' && <Badge variant="secondary" className="gap-1"><Database className="h-3 w-3" /> Local</Badge>}
+        </div>
+        <p className="text-sm text-foreground/70">
           Update the details of your rental listing.
         </p>
       </div>

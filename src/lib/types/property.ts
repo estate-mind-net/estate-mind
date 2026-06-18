@@ -1,3 +1,5 @@
+import type { ModuleId } from '@/modules/shared/types/module'
+
 export type PropertyType = 'apartment' | 'villa' | 'house' | 'land' | 'commercial' | 'mixed-use'
 export type PropertyCondition = 'new' | 'excellent' | 'good' | 'needs-renovation' | 'under-construction'
 
@@ -20,4 +22,6 @@ export interface Property {
   renovationNotes?: string
   legalNotes?: string
   createdAt: string
+  module_type?: ModuleId
+  module_data?: Record<string, unknown>
 }

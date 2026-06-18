@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus } from '@phosphor-icons/react'
+import { ArrowLeft, Cloud, Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -10,7 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { saveUserApartment } from '../services/rentStorage'
+import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
 import type { RentalApartment } from '../types'
+import { useAuth } from '@/hooks/useAuth'
 
 type FormData = {
   title: string
@@ -58,7 +60,9 @@ const INITIAL_FORM: FormData = {
 
 export function NewRentOpportunityPage() {
   const navigate = useNavigate()
+  const { user, organization } = useAuth()
   const [isSaving, setIsSaving] = useState(false)
+  const [saveMode, setSaveMode] = useState<'cloud' | 'local' | null>(null)
   const [formData, setFormData] = useState<FormData>(INITIAL_FORM)
 
   const updateText = (key: keyof FormData, value: string) => {
@@ -69,7 +73,7 @@ export function NewRentOpportunityPage() {
     setFormData((prev) => ({ ...prev, [key]: value }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!formData.title.trim() || !formData.city.trim() || !formData.district.trim() || !formData.monthlyRent || !formData.sizeM2 || !formData.bedrooms) {
@@ -79,36 +83,57 @@ export function NewRentOpportunityPage() {
 
     setIsSaving(true)
 
+    const apartment: RentalApartment = {
+      id: `rent-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: formData.title.trim(),
+      city: formData.city.trim(),
+      district: formData.district.trim(),
+      address: formData.address.trim() || undefined,
+      monthlyRent: Number(formData.monthlyRent),
+      currency: formData.currency,
+      sizeM2: Number(formData.sizeM2),
+      bedrooms: Number(formData.bedrooms),
+      furnished: formData.furnished,
+      parking: formData.parking,
+      balcony: formData.balcony,
+      elevator: formData.elevator,
+      petsAllowed: formData.petsAllowed,
+      floor: formData.floor ? Number(formData.floor) : undefined,
+      listingUrl: formData.listingUrl.trim() || undefined,
+      notes: formData.notes.trim() || undefined,
+      status: 'new',
+      contactName: formData.contactName.trim() || undefined,
+      contactPhone: formData.contactPhone.trim() || undefined,
+      nextAction: formData.nextAction.trim() || undefined,
+    }
+
     try {
-      const apartment: RentalApartment = {
-        id: `rent-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: formData.title.trim(),
-        city: formData.city.trim(),
-        district: formData.district.trim(),
-        address: formData.address.trim() || undefined,
-        monthlyRent: Number(formData.monthlyRent),
-        currency: formData.currency,
-        sizeM2: Number(formData.sizeM2),
-        bedrooms: Number(formData.bedrooms),
-        furnished: formData.furnished,
-        parking: formData.parking,
-        balcony: formData.balcony,
-        elevator: formData.elevator,
-        petsAllowed: formData.petsAllowed,
-        floor: formData.floor ? Number(formData.floor) : undefined,
-        listingUrl: formData.listingUrl.trim() || undefined,
-        notes: formData.notes.trim() || undefined,
-        status: 'new',
-        contactName: formData.contactName.trim() || undefined,
-        contactPhone: formData.contactPhone.trim() || undefined,
-        nextAction: formData.nextAction.trim() || undefined,
+      // Try Supabase first
+      if (organization?.id && user?.id) {
+        const result = await rentSupabaseAdapter.createRentApartment(apartment, {
+          organizationId: organization.id,
+          userId: user.id,
+        })
+
+        if (result.success && result.data) {
+          setSaveMode('cloud')
+          toast.success('Saved to cloud.', { icon: <Cloud className="h-4 w-4" /> })
+          navigate(`/rent/${result.data.id}`)
+          return
+        }
       }
 
+      // Fallback to localStorage
       saveUserApartment(apartment)
-      toast.success('Rental listing saved locally.')
+      setSaveMode('local')
+      toast.success('Saved locally.')
       navigate(`/rent/${apartment.id}`)
     } catch {
-      toast.error('Failed to save. Please try again.')
+      // Final fallback to localStorage
+      saveUserApartment(apartment)
+      setSaveMode('local')
+      toast.success('Saved locally.')
+      navigate(`/rent/${apartment.id}`)
     } finally {
       setIsSaving(false)
     }

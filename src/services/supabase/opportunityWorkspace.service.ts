@@ -1,4 +1,5 @@
 import type { InvestmentAnalysis, Opportunity, OpportunityStageHistoryEntry, Property } from '@/lib/types'
+import type { ModuleId } from '@/modules/shared/types/module'
 import { normalizeOpportunityStage } from '@/lib/constants/opportunityStages'
 import { getSupabaseClient } from './client'
 import { replaceAiFindingsForOpportunity } from './aiFindingsPersistence'
@@ -18,6 +19,8 @@ type PropertyRow = {
   description: string | null
   created_at: string | null
   updated_at: string | null
+  module_type: string | null
+  module_data: Record<string, unknown> | null
 }
 
 type OpportunityRow = {
@@ -29,6 +32,12 @@ type OpportunityRow = {
   expected_monthly_rent: number | null
   created_at: string | null
   updated_at: string | null
+  module_type: string | null
+  module_data: Record<string, unknown> | null
+  contact_name: string | null
+  contact_phone: string | null
+  next_action: string | null
+  viewed_at: string | null
 }
 
 type NoteRow = {
@@ -66,6 +75,12 @@ export interface OpportunityWorkspaceItem {
   property: Property
   analysis: InvestmentAnalysis | null
   latestNote: OpportunityNoteSnapshot | null
+  module_type?: string | null
+  module_data?: Record<string, unknown> | null
+  contact_name?: string | null
+  contact_phone?: string | null
+  next_action?: string | null
+  viewed_at?: string | null
 }
 
 export interface OpportunityWorkspaceLoadResult {
@@ -270,6 +285,12 @@ const mapRowsToItem = (
           parsedAnalysis,
         }
       : null,
+    module_type: opportunity.module_type,
+    module_data: opportunity.module_data,
+    contact_name: opportunity.contact_name,
+    contact_phone: opportunity.contact_phone,
+    next_action: opportunity.next_action,
+    viewed_at: opportunity.viewed_at,
   }
 }
 
@@ -801,6 +822,319 @@ export class OpportunityWorkspaceService {
     return {
       items,
       source: 'supabase',
+    }
+  }
+
+  // ── Module-aware methods (Phase 3) ────────────────────────────────
+
+  async getOpportunitiesByModule(
+    moduleType: ModuleId,
+    options?: OpportunityWorkspaceQueryOptions,
+  ): Promise<OpportunityWorkspaceLoadResult> {
+    const client = getSupabaseClient()
+    const organizationId = options?.organizationId
+
+    if (!client || !organizationId) {
+      return { items: [], source: 'supabase' }
+    }
+
+    const [opportunitiesResult, propertiesResult, notesResult] = await Promise.all([
+      client
+        .from('opportunities')
+        .select('id,property_id,title,stage,priority,expected_monthly_rent,created_at,updated_at,module_type,module_data,contact_name,contact_phone,next_action,viewed_at')
+        .eq('organization_id', organizationId)
+        .eq('module_type', moduleType)
+        .order('created_at', { ascending: false }),
+      client
+        .from('properties')
+        .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at,module_type,module_data')
+        .eq('organization_id', organizationId)
+        .eq('module_type', moduleType),
+      client
+        .from('notes')
+        .select('id,opportunity_id,content,created_at')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false }),
+    ])
+
+    if (opportunitiesResult.error) throw new Error(opportunitiesResult.error.message)
+    if (propertiesResult.error) throw new Error(propertiesResult.error.message)
+    if (notesResult.error) throw new Error(notesResult.error.message)
+
+    const opportunities = (opportunitiesResult.data ?? []) as OpportunityRow[]
+    const properties = (propertiesResult.data ?? []) as PropertyRow[]
+    const notes = (notesResult.data ?? []) as NoteRow[]
+
+    const propertyById = new Map(properties.map((p) => [p.id, p]))
+    const latestNoteByOppId = new Map<string, NoteRow>()
+    notes.forEach((note) => {
+      if (!latestNoteByOppId.has(note.opportunity_id)) {
+        latestNoteByOppId.set(note.opportunity_id, note)
+      }
+    })
+
+    const items = opportunities
+      .map((opp) => {
+        const property = propertyById.get(opp.property_id)
+        if (!property) return null
+        return mapRowsToItem(opp, property, latestNoteByOppId.get(opp.id))
+      })
+      .filter((item): item is OpportunityWorkspaceItem => item !== null)
+
+    return { items, source: 'supabase' }
+  }
+
+  async getOpportunityByIdForModule(
+    opportunityId: string,
+    moduleType: ModuleId,
+    options?: OpportunityWorkspaceQueryOptions,
+  ): Promise<OpportunityWorkspaceDetail | null> {
+    const client = getSupabaseClient()
+    const organizationId = options?.organizationId
+
+    if (!client || !organizationId) return null
+
+    const [opportunityResult, notesResult] = await Promise.all([
+      client
+        .from('opportunities')
+        .select('id,property_id,title,stage,priority,expected_monthly_rent,created_at,updated_at,module_type,module_data,contact_name,contact_phone,next_action,viewed_at')
+        .eq('organization_id', organizationId)
+        .eq('module_type', moduleType)
+        .eq('id', opportunityId)
+        .maybeSingle(),
+      client
+        .from('notes')
+        .select('id,opportunity_id,content,created_at')
+        .eq('organization_id', organizationId)
+        .eq('opportunity_id', opportunityId)
+        .order('created_at', { ascending: false }),
+    ])
+
+    if (opportunityResult.error) throw new Error(opportunityResult.error.message)
+    if (notesResult.error) throw new Error(notesResult.error.message)
+
+    const opportunity = (opportunityResult.data as OpportunityRow | null) ?? null
+    if (!opportunity) return null
+
+    const propertyResult = await client
+      .from('properties')
+      .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at,module_type,module_data')
+      .eq('organization_id', organizationId)
+      .eq('id', opportunity.property_id)
+      .maybeSingle()
+
+    if (propertyResult.error) throw new Error(propertyResult.error.message)
+
+    const property = (propertyResult.data as PropertyRow | null) ?? null
+    if (!property) return null
+
+    const notes = ((notesResult.data ?? []) as NoteRow[]).map((note) => ({
+      id: note.id,
+      content: note.content ?? '',
+      createdAt: note.created_at ?? opportunity.updated_at ?? opportunity.created_at ?? new Date().toISOString(),
+      parsedAnalysis: parseAnalysisSnapshot(note.content ?? null),
+    }))
+
+    const latestNote = notes[0]
+    const item = mapRowsToItem(opportunity, property, latestNote)
+    const stageHistory = [...notes]
+      .reverse()
+      .map((note) => parseStageHistoryEvent(note.content, note.id, note.createdAt))
+      .filter((entry): entry is OpportunityStageHistoryEntry => entry !== null)
+
+    if (stageHistory.length === 0) {
+      stageHistory.push({
+        id: `${opportunity.id}-stage-initial`,
+        fromStage: null,
+        toStage: item.stage,
+        changedAt: item.createdAt,
+        source: 'import',
+        note: 'Opportunity created',
+      })
+    }
+
+    return { ...item, notes, stageHistory }
+  }
+
+  async createOpportunityForModule(
+    moduleType: ModuleId,
+    input: CreateOpportunityInput,
+    context: {
+      organizationId: string
+      userId: string
+      profileId?: string | null
+      moduleData?: Record<string, unknown>
+      contactName?: string
+      contactPhone?: string
+      nextAction?: string
+      stage?: Opportunity['status']
+    },
+  ): Promise<CreateOpportunityResult> {
+    const client = getSupabaseClient()
+    if (!client) {
+      throw new Error('Supabase is unavailable.')
+    }
+
+    const createdBy = context.userId || context.profileId || null
+
+    // Insert property with module_type
+    const propertyPayload: Record<string, unknown> = {
+      organization_id: context.organizationId,
+      title: input.title,
+      city: input.city,
+      country: input.country,
+      address: input.district,
+      property_type: input.propertyType,
+      asking_price: input.askingPrice,
+      currency: input.currency,
+      area_sqm: input.sizeSqm,
+      bedrooms: input.bedrooms,
+      condition: input.condition,
+      description: input.description,
+      module_type: moduleType,
+      module_data: context.moduleData ?? {},
+    }
+
+    if (input.listingUrl) {
+      propertyPayload.listing_url = input.listingUrl
+    }
+
+    if (createdBy) {
+      propertyPayload.created_by = createdBy
+    }
+
+    const { data: propertyData, error: propertyError } = await client
+      .from('properties')
+      .insert([propertyPayload])
+      .select('id')
+      .single()
+
+    if (propertyError || !propertyData) {
+      throw new Error(propertyError?.message || 'Failed to create property.')
+    }
+
+    const propertyId = (propertyData as { id: string }).id
+
+    // Insert opportunity with module_type
+    const opportunityPayload: Record<string, unknown> = {
+      organization_id: context.organizationId,
+      property_id: propertyId,
+      title: input.title,
+      stage: context.stage ?? 'lead',
+      priority: 'medium',
+      notes: input.listingUrl ? `Listing URL: ${input.listingUrl}` : '',
+      module_type: moduleType,
+      module_data: context.moduleData ?? {},
+    }
+
+    if (context.contactName) opportunityPayload.contact_name = context.contactName
+    if (context.contactPhone) opportunityPayload.contact_phone = context.contactPhone
+    if (context.nextAction) opportunityPayload.next_action = context.nextAction
+
+    if (createdBy) {
+      opportunityPayload.created_by = createdBy
+    }
+
+    try {
+      const { data: opportunityData, error: opportunityError } = await client
+        .from('opportunities')
+        .insert([opportunityPayload])
+        .select('id')
+        .single()
+
+      if (opportunityError || !opportunityData) {
+        throw new Error(opportunityError?.message || 'Failed to create opportunity.')
+      }
+
+      return { opportunityId: (opportunityData as { id: string }).id }
+    } catch (error) {
+      await client.from('properties').delete().eq('id', propertyId)
+      throw error
+    }
+  }
+
+  async updateOpportunityModuleData(
+    opportunityId: string,
+    moduleData: Record<string, unknown>,
+    context: { organizationId: string },
+  ): Promise<{ saved: boolean; warning?: string }> {
+    try {
+      const client = getSupabaseClient()
+      if (!client) throw new Error('Supabase is unavailable.')
+
+      // Load existing module_data and merge
+      const { data: existing, error: fetchError } = await client
+        .from('opportunities')
+        .select('module_data')
+        .eq('organization_id', context.organizationId)
+        .eq('id', opportunityId)
+        .maybeSingle()
+
+      if (fetchError) throw new Error(fetchError.message)
+
+      const existingData = ((existing as { module_data?: Record<string, unknown> } | null)?.module_data) ?? {}
+      const merged = { ...existingData, ...moduleData }
+
+      const { error: updateError } = await client
+        .from('opportunities')
+        .update({ module_data: merged, updated_at: new Date().toISOString() })
+        .eq('organization_id', context.organizationId)
+        .eq('id', opportunityId)
+
+      if (updateError) throw new Error(updateError.message)
+
+      return { saved: true }
+    } catch (error) {
+      return {
+        saved: false,
+        warning: error instanceof Error ? error.message : 'Failed to update module data.',
+      }
+    }
+  }
+
+  async updateOpportunityWorkflowFields(
+    opportunityId: string,
+    fields: {
+      stage?: Opportunity['status']
+      priority?: string
+      contact_name?: string | null
+      contact_phone?: string | null
+      next_action?: string | null
+      viewed_at?: string | null
+      notes?: string
+    },
+    context: { organizationId: string },
+  ): Promise<{ saved: boolean; warning?: string }> {
+    try {
+      const client = getSupabaseClient()
+      if (!client) throw new Error('Supabase is unavailable.')
+
+      const payload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      }
+
+      if (fields.stage !== undefined) payload.stage = fields.stage
+      if (fields.priority !== undefined) payload.priority = fields.priority
+      if (fields.contact_name !== undefined) payload.contact_name = fields.contact_name
+      if (fields.contact_phone !== undefined) payload.contact_phone = fields.contact_phone
+      if (fields.next_action !== undefined) payload.next_action = fields.next_action
+      if (fields.viewed_at !== undefined) payload.viewed_at = fields.viewed_at
+      if (fields.notes !== undefined) payload.notes = fields.notes
+
+      const { error } = await client
+        .from('opportunities')
+        .update(payload)
+        .eq('organization_id', context.organizationId)
+        .eq('id', opportunityId)
+
+      if (error) throw new Error(error.message)
+
+      return { saved: true }
+    } catch (error) {
+      return {
+        saved: false,
+        warning: error instanceof Error ? error.message : 'Failed to update workflow fields.',
+      }
     }
   }
 }

@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus } from '@phosphor-icons/react'
+import { Cloud, Database, Plus } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -9,23 +9,77 @@ import { RentOpportunityCard } from '../components/RentOpportunityCard'
 import { RentPreferencesPanel } from '../components/RentPreferencesPanel'
 import { scoreRentalApartment } from '../services/rentScoring'
 import { loadUserApartments } from '../services/rentStorage'
+import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
 import { SAMPLE_APARTMENTS } from '../data/sampleApartments'
-import type { RentPreferences, RentalStatus, RentRecommendation } from '../types'
+import type { RentPreferences, RentalStatus, RentalApartment, RentRecommendation } from '../types'
 import { DEFAULT_RENT_PREFERENCES, RENTAL_STATUS_LABELS } from '../types'
+import { useAuth } from '@/hooks/useAuth'
+
+type DataSource = 'cloud' | 'local' | 'demo'
 
 export function RentDashboardPage() {
   const navigate = useNavigate()
+  const { user, organization } = useAuth()
   type SortKey = 'score' | 'rent-asc' | 'rent-desc' | 'size' | 'rent-per-m2' | 'favorites'
 
   const [preferences, setPreferences] = useState<RentPreferences>(DEFAULT_RENT_PREFERENCES)
   const [statusFilter, setStatusFilter] = useState<RentalStatus | 'all'>('all')
   const [recFilter, setRecFilter] = useState<RentRecommendation | 'all'>('all')
   const [sortBy, setSortBy] = useState<SortKey>('score')
+  const [userApartments, setUserApartments] = useState<RentalApartment[]>([])
+  const [dataSource, setDataSource] = useState<DataSource>('demo')
+  const [loading, setLoading] = useState(false)
+
+  // Load user apartments: try Supabase first, fall back to localStorage
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadFromSupabase() {
+      if (!organization?.id || !user?.id) return null
+
+      try {
+        const result = await rentSupabaseAdapter.listRentApartments({
+          organizationId: organization.id,
+          userId: user.id,
+        })
+
+        if (!cancelled && result.success && result.data) {
+          return result.data
+        }
+      } catch {
+        // Supabase unavailable, fall through to localStorage
+      }
+
+      return null
+    }
+
+    async function load() {
+      setLoading(true)
+
+      const cloudData = await loadFromSupabase()
+
+      if (!cancelled) {
+        if (cloudData && cloudData.length > 0) {
+          setUserApartments(cloudData)
+          setDataSource('cloud')
+        } else {
+          // Fallback to localStorage
+          const localData = loadUserApartments()
+          setUserApartments(localData)
+          setDataSource(localData.length > 0 ? 'local' : 'demo')
+        }
+        setLoading(false)
+      }
+    }
+
+    load()
+
+    return () => { cancelled = true }
+  }, [organization?.id, user?.id])
 
   const allApartments = useMemo(() => {
-    const userApartments = loadUserApartments()
     return [...SAMPLE_APARTMENTS, ...userApartments]
-  }, [])
+  }, [userApartments])
 
   const scoredApartments = useMemo(() => {
     return allApartments.map((apartment) => {
@@ -110,7 +164,19 @@ export function RentDashboardPage() {
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">Demo data</Badge>
+          {dataSource === 'cloud' && (
+            <Badge variant="default" className="gap-1">
+              <Cloud className="h-3 w-3" /> Cloud data
+            </Badge>
+          )}
+          {dataSource === 'local' && (
+            <Badge variant="secondary" className="gap-1">
+              <Database className="h-3 w-3" /> Local data
+            </Badge>
+          )}
+          {dataSource === 'demo' && (
+            <Badge variant="secondary">Demo data</Badge>
+          )}
           <span className="text-xs text-muted-foreground">
             Showing {filteredApartments.length} of {allApartments.length} apartments
           </span>

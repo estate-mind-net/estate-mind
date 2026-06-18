@@ -1,43 +1,127 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Heart, PencilSimple, Phone, Trash, Eye, XCircle } from '@phosphor-icons/react'
+import { ArrowLeft, Brain, Cloud, Database, Heart, PencilSimple, Phone, Trash, Eye, XCircle } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { scoreRentalApartment } from '../services/rentScoring'
+import { generateRentAnalysis } from '../services/rentAnalysis'
+import type { RentAnalysisResult } from '../services/rentAnalysis'
+import { RentAnalysisReport } from '../components/RentAnalysisReport'
 import { getUserApartmentById, deleteUserApartment, isUserApartment, updateApartmentStatus } from '../services/rentStorage'
+import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
+import type { RentalApartment } from '../types'
 import { SAMPLE_APARTMENTS } from '../data/sampleApartments'
 import { DEFAULT_RENT_PREFERENCES, RENTAL_STATUS_LABELS } from '../types'
 import type { RentalStatus } from '../types'
+import { useAuth } from '@/hooks/useAuth'
+
+type ApartmentSource = 'cloud' | 'local' | 'demo'
 
 export function RentOpportunityDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user, organization } = useAuth()
 
   const [refreshKey, setRefreshKey] = useState(0)
+  const [analysis, setAnalysis] = useState<RentAnalysisResult | null>(null)
+  const [cloudApartment, setCloudApartment] = useState<RentalApartment | null>(null)
+  const [source, setSource] = useState<ApartmentSource>('demo')
+  const [loading, setLoading] = useState(true)
 
-  const apartment = useMemo(() => {
-    if (!id) return null
-    const userApartment = getUserApartmentById(id)
-    if (userApartment) return userApartment
-    return SAMPLE_APARTMENTS.find((a) => a.id === id) ?? null
+  // Try loading from Supabase first
+  useEffect(() => {
+    if (!id) { setLoading(false); return }
+
+    let cancelled = false
+
+    async function loadCloud() {
+      if (!organization?.id || !user?.id || !id) return null
+      try {
+        const result = await rentSupabaseAdapter.getRentApartmentById(id, {
+          organizationId: organization.id,
+          userId: user.id,
+        })
+        if (!cancelled && result.success && result.data) {
+          return result.data
+        }
+      } catch {
+        // fall through
+      }
+      return null
+    }
+
+    async function load() {
+      const cloud = await loadCloud()
+      if (cancelled) return
+
+      if (cloud) {
+        setCloudApartment(cloud)
+        setSource('cloud')
+      } else {
+        // Fallback: localStorage then sample
+        const local = getUserApartmentById(id!)
+        if (local) {
+          setCloudApartment(local)
+          setSource('local')
+        } else {
+          const demo = SAMPLE_APARTMENTS.find((a) => a.id === id) ?? null
+          if (demo) {
+            setCloudApartment(demo)
+            setSource('demo')
+          }
+        }
+      }
+      setLoading(false)
+    }
+
+    load()
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, refreshKey])
+  }, [id, organization?.id, user?.id, refreshKey])
 
-  const isUser = id ? isUserApartment(id) : false
+  const apartment = cloudApartment
 
-  const handleStatusChange = (status: RentalStatus) => {
-    if (!id || !isUser) return
-    updateApartmentStatus(id, status)
-    toast.success(`Status updated to ${RENTAL_STATUS_LABELS[status]}`)
+  const isUser = source === 'cloud' || (id ? isUserApartment(id) : false)
+
+  const handleStatusChange = async (status: RentalStatus) => {
+    if (!id) return
+
+    if (source === 'cloud' && organization?.id) {
+      const result = await rentSupabaseAdapter.updateRentApartmentStatus(id, status, {
+        organizationId: organization.id,
+        userId: user?.id ?? '',
+      })
+      if (result.success) {
+        toast.success(`Status updated to ${RENTAL_STATUS_LABELS[status]}`)
+      } else {
+        toast.error(result.error ?? 'Failed to update status.')
+      }
+    } else if (isUserApartment(id)) {
+      updateApartmentStatus(id, status)
+      toast.success(`Status updated to ${RENTAL_STATUS_LABELS[status]}`)
+    } else {
+      return
+    }
     setRefreshKey((k) => k + 1)
+  }
+
+  const handleGenerateAnalysis = () => {
+    if (!apartment) return
+    const result = generateRentAnalysis(apartment, DEFAULT_RENT_PREFERENCES)
+    setAnalysis(result)
+    toast.success('Analysis generated.')
   }
 
   const handleDelete = () => {
     if (!id || !isUser) return
+    if (source === 'cloud') {
+      toast.error('Cloud delete is not supported yet.')
+      return
+    }
     if (!window.confirm('Are you sure you want to delete this listing? This cannot be undone.')) return
     deleteUserApartment(id)
     toast.success('Listing deleted.')
@@ -48,6 +132,20 @@ export function RentOpportunityDetailPage() {
     if (!apartment) return null
     return scoreRentalApartment(apartment, DEFAULT_RENT_PREFERENCES)
   }, [apartment])
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <Button variant="ghost" onClick={() => navigate('/rent')} className="-ml-2">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Rent
+        </Button>
+        <Card className="p-10 text-center">
+          <p className="text-muted-foreground">Loading apartment...</p>
+        </Card>
+      </div>
+    )
+  }
 
   if (!apartment) {
     return (
@@ -64,7 +162,7 @@ export function RentOpportunityDetailPage() {
     )
   }
 
-  const isDemo = apartment.id.startsWith('rent-demo-')
+  const isDemo = source === 'demo'
   const {
     title, district, city, address, monthlyRent, currency, sizeM2, bedrooms,
     furnished, parking, balcony, elevator, petsAllowed, floor, listingUrl, notes,
@@ -80,7 +178,9 @@ export function RentOpportunityDetailPage() {
       <div className="space-y-3">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="font-display text-3xl font-bold tracking-tight">{title}</h1>
-          {isDemo && <Badge variant="secondary">Demo</Badge>}
+          {source === 'cloud' && <Badge variant="default" className="gap-1"><Cloud className="h-3 w-3" /> Cloud</Badge>}
+          {source === 'local' && <Badge variant="secondary" className="gap-1"><Database className="h-3 w-3" /> Local</Badge>}
+          {source === 'demo' && <Badge variant="secondary">Demo</Badge>}
         </div>
         <p className="text-foreground/70">{district}, {city}{address ? ` — ${address}` : ''}</p>
         {isUser && (
@@ -101,10 +201,21 @@ export function RentOpportunityDetailPage() {
               <XCircle className="mr-2 h-4 w-4" />
               Reject
             </Button>
-            <Button variant="destructive" size="sm" onClick={handleDelete}>
-              <Trash className="mr-2 h-4 w-4" />
-              Delete
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button variant="destructive" size="sm" onClick={handleDelete} disabled={source === 'cloud'}>
+                      <Trash className="mr-2 h-4 w-4" />
+                      Delete
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {source === 'cloud' && (
+                  <TooltipContent>Cloud delete not supported yet</TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           </div>
         )}
       </div>
@@ -207,6 +318,15 @@ export function RentOpportunityDetailPage() {
           )}
         </div>
       </Card>
+
+      <div className="flex justify-center">
+        <Button onClick={handleGenerateAnalysis} className="bg-accent text-accent-foreground hover:bg-accent/90">
+          <Brain className="mr-2 h-4 w-4" />
+          {analysis ? 'Regenerate Analysis' : 'Generate Rent Analysis'}
+        </Button>
+      </div>
+
+      {analysis && <RentAnalysisReport analysis={analysis} />}
 
       {notes && (
         <Card className="p-6 space-y-2">
