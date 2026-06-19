@@ -17,15 +17,21 @@ export interface ManualDiscoveryRunResponse {
 }
 
 export async function triggerDiscoveryRun(
-  mode: 'manual' | 'nightly' = 'manual',
+  modeOrOptions: 'manual' | 'nightly' | { briefId: string; organizationId?: string } = 'manual',
   organizationId?: string,
 ): Promise<ManualDiscoveryRunResponse> {
   const url = '/api/discovery/run'
 
+  let body: Record<string, unknown>
+  if (typeof modeOrOptions === 'object') {
+    body = { mode: 'manual', organizationId: modeOrOptions.organizationId ?? organizationId, briefId: modeOrOptions.briefId }
+  } else {
+    body = { mode: modeOrOptions, organizationId }
+  }
+
   console.info('[discovery] request started', {
     url,
-    mode,
-    organizationId: organizationId ?? 'none',
+    ...body,
   })
 
   try {
@@ -34,7 +40,7 @@ export async function triggerDiscoveryRun(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ mode, organizationId }),
+      body: JSON.stringify(body),
     })
 
     const contentType = response.headers.get('content-type') ?? ''

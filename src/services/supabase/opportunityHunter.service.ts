@@ -139,16 +139,23 @@ const mapHealth = (source: OpportunitySource, run: SourceConnectorRun | null): {
 }
 
 export class OpportunityHunterService {
-  async listBriefs(organizationId: string): Promise<InvestmentSearchBrief[]> {
+  async listBriefs(organizationId: string, moduleType?: string): Promise<InvestmentSearchBrief[]> {
     const client = getSupabaseClient()
     if (!client) return []
 
-    const { data, error } = await client
+    const base = client
       .from('investment_search_briefs')
       .select('*')
       .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false })
 
+    // Apply module_type filter
+    const filtered = moduleType === 'invest'
+      ? base.or('module_type.is.null,module_type.eq.invest')
+      : moduleType
+        ? base.eq('module_type', moduleType)
+        : base
+
+    const { data, error } = await filtered.order('created_at', { ascending: false })
     if (error) throw new Error(error.message)
     return toArray(data as BriefRow[])
   }
@@ -198,16 +205,22 @@ export class OpportunityHunterService {
     return data as BriefRow
   }
 
-  async listSources(organizationId: string): Promise<OpportunitySource[]> {
+  async listSources(organizationId: string, moduleType?: string): Promise<OpportunitySource[]> {
     const client = getSupabaseClient()
     if (!client) return []
 
-    const { data, error } = await client
+    const base = client
       .from('opportunity_sources')
       .select('*')
       .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false })
 
+    const filtered = moduleType === 'invest'
+      ? base.or('module_type.is.null,module_type.eq.invest')
+      : moduleType
+        ? base.eq('module_type', moduleType)
+        : base
+
+    const { data, error } = await filtered.order('created_at', { ascending: false })
     if (error) throw new Error(error.message)
     return toArray(data as SourceRow[])
   }
@@ -224,6 +237,64 @@ export class OpportunityHunterService {
 
     if (error || !data) throw new Error(error?.message ?? 'Failed to create source.')
     return data as SourceRow
+  }
+
+  // ── Brief-Source assignments (brief_sources bridge table) ──────
+
+  async assignSourceToBrief(briefId: string, sourceId: string): Promise<void> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { error } = await client
+      .from('brief_sources')
+      .upsert({ brief_id: briefId, source_id: sourceId }, { onConflict: 'brief_id,source_id' })
+
+    if (error) throw new Error(error.message)
+  }
+
+  async removeSourceFromBrief(briefId: string, sourceId: string): Promise<void> {
+    const client = getSupabaseClient()
+    if (!client) throw new Error('Supabase is unavailable.')
+
+    const { error } = await client
+      .from('brief_sources')
+      .delete()
+      .eq('brief_id', briefId)
+      .eq('source_id', sourceId)
+
+    if (error) throw new Error(error.message)
+  }
+
+  async listBriefSources(briefId: string): Promise<OpportunitySource[]> {
+    const client = getSupabaseClient()
+    if (!client) return []
+
+    const { data, error } = await client
+      .from('brief_sources')
+      .select('source_id, opportunity_sources(*)')
+      .eq('brief_id', briefId)
+
+    if (error) throw new Error(error.message)
+
+    return (data ?? [])
+      .map((row: Record<string, unknown>) => {
+        const src = row.opportunity_sources
+        return src as OpportunitySource | null
+      })
+      .filter((src): src is OpportunitySource => src != null)
+  }
+
+  async listAssignedSourceIds(briefId: string): Promise<string[]> {
+    const client = getSupabaseClient()
+    if (!client) return []
+
+    const { data, error } = await client
+      .from('brief_sources')
+      .select('source_id')
+      .eq('brief_id', briefId)
+
+    if (error) throw new Error(error.message)
+    return (data ?? []).map((row: { source_id: string }) => row.source_id)
   }
 
   async updateSource(

@@ -23,6 +23,8 @@ export interface InvestmentSearchBrief {
   is_active: boolean
   created_at: string
   updated_at: string
+  module_type?: string
+  module_data?: Record<string, unknown>
 }
 
 export interface OpportunitySource {
@@ -41,6 +43,7 @@ export interface OpportunitySource {
   last_run_at: string | null
   created_at: string
   updated_at: string
+  module_type?: string
 }
 
 export interface SourceConnectorRun {

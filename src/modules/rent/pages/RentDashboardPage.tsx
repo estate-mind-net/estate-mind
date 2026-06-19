@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Cloud, Database, Plus } from '@phosphor-icons/react'
+import { Cloud, Compass, Database, Plus } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -212,6 +212,10 @@ export function RentDashboardPage() {
               <SelectItem value="favorites">Favorites First</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="outline" onClick={() => navigate('/rent/hunter')}>
+            <Compass className="mr-2 h-4 w-4" />
+            Rent Hunter
+          </Button>
           <Button variant="outline" onClick={() => navigate('/rent/compare')}>
             Compare
           </Button>

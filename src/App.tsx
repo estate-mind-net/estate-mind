@@ -36,6 +36,11 @@ import { NewRentOpportunityPage } from '@/modules/rent/pages/NewRentOpportunityP
 import { RentOpportunityDetailPage } from '@/modules/rent/pages/RentOpportunityDetailPage'
 import { EditRentOpportunityPage } from '@/modules/rent/pages/EditRentOpportunityPage'
 import { RentComparisonPage } from '@/modules/rent/pages/RentComparisonPage'
+import { RentHunterFormPage } from '@/modules/rent/hunter/pages/RentHunterFormPage'
+import { RentHunterDashboardPage } from '@/modules/rent/hunter/pages/RentHunterDashboardPage'
+import { RentHunterDetailPage } from '@/modules/rent/hunter/pages/RentHunterDetailPage'
+import { RentImportUrlPage } from '@/modules/rent/hunter/pages/RentImportUrlPage'
+import { RentManualCompletionPage } from '@/modules/rent/hunter/pages/RentManualCompletionPage'
 import { BuyDashboardPage } from '@/modules/buy/pages/BuyDashboardPage'
 import { InvestDashboardPage } from '@/modules/invest/pages/InvestDashboardPage'
 import { BuildDashboardPage } from '@/modules/build/pages/BuildDashboardPage'
@@ -273,6 +278,11 @@ function App() {
           <Route path="/rent" element={<WorkspaceShell><RentDashboardPage /></WorkspaceShell>} />
           <Route path="/rent/new" element={<WorkspaceShell><NewRentOpportunityPage /></WorkspaceShell>} />
           <Route path="/rent/compare" element={<WorkspaceShell><RentComparisonPage /></WorkspaceShell>} />
+          <Route path="/rent/hunter" element={<WorkspaceShell><RentHunterDashboardPage /></WorkspaceShell>} />
+          <Route path="/rent/hunter/new" element={<WorkspaceShell><RentHunterFormPage /></WorkspaceShell>} />
+          <Route path="/rent/hunter/import-url" element={<WorkspaceShell><RentImportUrlPage /></WorkspaceShell>} />
+          <Route path="/rent/hunter/manual-completion/:rawId" element={<WorkspaceShell><RentManualCompletionPage /></WorkspaceShell>} />
+          <Route path="/rent/hunter/:id" element={<WorkspaceShell><RentHunterDetailPage /></WorkspaceShell>} />
           <Route path="/rent/:id" element={<WorkspaceShell><RentOpportunityDetailPage /></WorkspaceShell>} />
           <Route path="/rent/:id/edit" element={<WorkspaceShell><EditRentOpportunityPage /></WorkspaceShell>} />
           <Route path="/buy" element={<WorkspaceShell><BuyDashboardPage /></WorkspaceShell>} />

@@ -8,6 +8,7 @@ import { RssConnector } from './connectors/RssConnector'
 import { PartnerFeedConnector } from './connectors/PartnerFeedConnector'
 import { PortalConnector } from './connectors/PortalConnector'
 import { WebSearchConnector } from './connectors/WebSearchConnector'
+import { RentDemoConnector } from './connectors/RentDemoConnector'
 
 const connectors: OpportunityConnector[] = [
   new ManualUrlConnector(),
@@ -18,6 +19,7 @@ const connectors: OpportunityConnector[] = [
   new PartnerFeedConnector(),
   new PortalConnector(),
   new WebSearchConnector(),
+  new RentDemoConnector(),
 ]
 
 export const resolveConnector = (source: OpportunitySource): OpportunityConnector | null => {

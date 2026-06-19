@@ -4,6 +4,7 @@ import { resolveConnector } from './connectorRegistry'
 import { normalizeRawOpportunity } from './normalization'
 import { deduplicateRawOpportunities } from './deduplication'
 import { evaluateOpportunityMatch } from './matchingEngine'
+import { evaluateRentMatch, type RentSearchBrief } from '../../modules/rent/hunter/rentMatchingEngine'
 import { validateRawOpportunityForSave } from './saveValidation'
 
 export interface DiscoveryRepository {
@@ -29,6 +30,7 @@ export interface DiscoveryRepository {
     briefId: string
     rawOpportunityId: string
     sourceId: string | null
+    moduleType?: string
     matchScore: number
     matchReasons: string[]
     mismatchReasons: string[]
@@ -338,9 +340,15 @@ export const runDiscoveryForBriefAndSource = async (
     let matchedCount = 0
     let skippedByScoreCount = 0
 
+    // Route to rent matching engine when brief is module_type='rent'
+    const isRentBrief = (brief as InvestmentSearchBrief & { module_type?: string }).module_type === 'rent'
+    const evaluateMatch = isRentBrief
+      ? (b: InvestmentSearchBrief, r: RawOpportunity) => evaluateRentMatch(b as unknown as RentSearchBrief, r)
+      : evaluateOpportunityMatch
+
     for (const row of canonicalRows) {
       if (!row.id) continue
-      const evaluation = evaluateOpportunityMatch(brief, row)
+      const evaluation = evaluateMatch(brief, row)
       if (evaluation.isRejected) {
         skippedByScoreCount += 1
         rejectedMatches.push({
@@ -367,11 +375,15 @@ export const runDiscoveryForBriefAndSource = async (
       const aiInvestmentScore = parseAiScore(aiAnalysis)
       const recommendation = typeof aiAnalysis?.recommendation === 'string' ? aiAnalysis.recommendation : null
 
+      // Tag match and raw opportunity with module_type for rent
+      const moduleType = isRentBrief ? 'rent' : 'invest'
+
       await repo.upsertMatch({
         organizationId,
         briefId: brief.id,
         rawOpportunityId: row.id,
         sourceId: source.id,
+        moduleType,
         matchScore: evaluation.matchScore,
         matchReasons: evaluation.matchReasons,
         mismatchReasons: evaluation.mismatchReasons,
@@ -391,7 +403,9 @@ export const runDiscoveryForBriefAndSource = async (
         briefId: brief.id,
         rawOpportunityId: row.id,
         alertType: evaluation.matchScore >= 80 ? 'high_match' : 'new_match',
-        title: evaluation.matchScore >= 80 ? 'High opportunity match found' : 'New opportunity match found',
+        title: evaluation.matchScore >= 80
+          ? (isRentBrief ? 'High rent match found' : 'High opportunity match found')
+          : (isRentBrief ? 'New rent match found' : 'New opportunity match found'),
         message: `${row.title} matched ${evaluation.matchScore}/100 for ${brief.title}.`,
         severity: evaluation.matchScore >= 80 ? 'warning' : 'info',
         metadata: {
@@ -518,12 +532,13 @@ export const runDiscoveryForBriefAndSource = async (
       },
     })
 
-    await repo.createAlert({
-      organizationId,
-      briefId: brief.id,
-      alertType: 'source_failure',
-      title: 'Source connector failed',
-      message: `${source.name} failed during discovery: ${message}`,
+      const isRentBriefForError = (brief as InvestmentSearchBrief & { module_type?: string }).module_type === 'rent'
+      await repo.createAlert({
+        organizationId,
+        briefId: brief.id,
+        alertType: 'source_failure',
+        title: isRentBriefForError ? 'Rent source connector failed' : 'Source connector failed',
+        message: `${source.name} failed during discovery: ${message}`,
       severity: 'critical',
       metadata: {
         sourceId: source.id,

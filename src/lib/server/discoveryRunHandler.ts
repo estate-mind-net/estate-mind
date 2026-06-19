@@ -6,6 +6,7 @@ import type { InvestmentSearchBrief, OpportunitySource, RawOpportunity } from '.
 export type DiscoveryRunRequestPayload = {
   mode?: 'manual' | 'nightly'
   organizationId?: string
+  briefId?: string
 }
 
 export type DiscoveryRunSuccessResponse = {
@@ -306,13 +307,61 @@ const loadOrganizationsToRun = async (organizationId?: string): Promise<string[]
   return [...unique]
 }
 
-const loadDiscoveryInputs = async (organizationId: string): Promise<{
+const loadDiscoveryInputs = async (organizationId: string, briefId?: string): Promise<{
   briefs: InvestmentSearchBrief[]
   sources: OpportunitySource[]
   allSources: OpportunitySource[]
 }> => {
   const supabase = getAdminClient()
 
+  // Per-brief mode: load only that brief and its assigned sources
+  if (briefId) {
+    const [briefRes, allSourcesRes] = await Promise.all([
+      supabase
+        .from('investment_search_briefs')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('id', briefId)
+        .eq('is_active', true)
+        .maybeSingle(),
+      supabase
+        .from('opportunity_sources')
+        .select('*')
+        .eq('organization_id', organizationId),
+    ])
+
+    if (briefRes.error) throw new Error(briefRes.error.message)
+    if (allSourcesRes.error) throw new Error(allSourcesRes.error.message)
+
+    const brief = briefRes.data as InvestmentSearchBrief | null
+    if (!brief) return { briefs: [], sources: [], allSources: (allSourcesRes.data ?? []) as OpportunitySource[] }
+
+    // Load assigned source IDs for this brief
+    const { data: assignmentRows, error: assignError } = await supabase
+      .from('brief_sources')
+      .select('source_id')
+      .eq('brief_id', briefId)
+
+    if (assignError) throw new Error(assignError.message)
+
+    const assignedIds = new Set(
+      (assignmentRows ?? []).map((row: { source_id: string }) => row.source_id),
+    )
+
+    const allSources = (allSourcesRes.data ?? []) as OpportunitySource[]
+
+    // If brief has assigned sources, use only those; otherwise fall back to all enabled
+    let sources: OpportunitySource[]
+    if (assignedIds.size > 0) {
+      sources = allSources.filter((s) => assignedIds.has(s.id) && s.is_enabled && s.terms_checked)
+    } else {
+      sources = allSources.filter((s) => s.is_enabled && s.terms_checked)
+    }
+
+    return { briefs: [brief], sources, allSources }
+  }
+
+  // Global mode: all active briefs and all enabled sources
   const [briefsRes, sourcesRes, allSourcesRes] = await Promise.all([
     supabase
       .from('investment_search_briefs')
@@ -394,6 +443,7 @@ const formatError = (error: unknown): DiscoveryRunErrorResponse => {
 export async function executeDiscoveryRun(payloadInput: unknown): Promise<DiscoveryRunSuccessResponse> {
   const payload = parsePayload(payloadInput)
   const mode = payload.mode ?? 'manual'
+  const briefId = typeof payload.briefId === 'string' ? payload.briefId : undefined
   const organizations = await loadOrganizationsToRun(payload.organizationId)
 
   const repo = buildRepository()
@@ -406,7 +456,7 @@ export async function executeDiscoveryRun(payloadInput: unknown): Promise<Discov
   })
 
   for (const organizationId of organizations) {
-    const { briefs, sources, allSources } = await loadDiscoveryInputs(organizationId)
+    const { briefs, sources, allSources } = await loadDiscoveryInputs(organizationId, briefId)
     const skippedSources = allSources.filter((source) => !source.is_enabled || !source.terms_checked)
 
     console.log('[DISCOVERY TRACE]', {
