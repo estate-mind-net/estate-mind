@@ -10,6 +10,9 @@ interface RentAnalysisReportProps {
 const recommendationVariant: Record<RentRecommendation, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   'Excellent Fit': 'default',
   'Good Fit': 'secondary',
+  'Possible Fit': 'outline',
+  'Weak Fit': 'destructive',
+  'Reject': 'destructive',
   Watch: 'outline',
   Avoid: 'destructive',
 }

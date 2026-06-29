@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Cloud, Compass, Database, Plus } from '@phosphor-icons/react'
+import { Compass, Plus, List, SquaresFour } from '@phosphor-icons/react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RentOpportunityCard } from '../components/RentOpportunityCard'
+import { RentOpportunityTable } from '../components/RentOpportunityTable'
 import { RentPreferencesPanel } from '../components/RentPreferencesPanel'
-import { scoreRentalApartment } from '../services/rentScoring'
-import { loadUserApartments } from '../services/rentStorage'
-import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
-import { SAMPLE_APARTMENTS } from '../data/sampleApartments'
+import { normalizeRentListing } from '@/modules/opportunity-intelligence/normalizers/rentNormalizer'
+import { scoreRentOpportunity } from '@/modules/opportunity-intelligence/scoring/rentScorer'
+import { toRentModulePreferences } from '@/modules/opportunity-intelligence/configs/rentModuleConfig'
+import { opportunityRepository } from '../repositories/OpportunityRepository'
 import type { RentPreferences, RentalStatus, RentalApartment, RentRecommendation } from '../types'
 import { DEFAULT_RENT_PREFERENCES, RENTAL_STATUS_LABELS } from '../types'
 import { useAuth } from '@/hooks/useAuth'
-
-type DataSource = 'cloud' | 'local' | 'demo'
 
 export function RentDashboardPage() {
   const navigate = useNavigate()
@@ -27,49 +26,26 @@ export function RentDashboardPage() {
   const [recFilter, setRecFilter] = useState<RentRecommendation | 'all'>('all')
   const [sortBy, setSortBy] = useState<SortKey>('score')
   const [userApartments, setUserApartments] = useState<RentalApartment[]>([])
-  const [dataSource, setDataSource] = useState<DataSource>('demo')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
+    const stored = localStorage.getItem('rent:viewMode')
+    return stored === 'list' ? 'list' : 'cards'
+  })
 
-  // Load user apartments: try Supabase first, fall back to localStorage
+  // Load opportunities from Supabase
   useEffect(() => {
     let cancelled = false
 
-    async function loadFromSupabase() {
-      if (!organization?.id || !user?.id) return null
-
-      try {
-        const result = await rentSupabaseAdapter.listRentApartments({
-          organizationId: organization.id,
-          userId: user.id,
-        })
-
-        if (!cancelled && result.success && result.data) {
-          return result.data
-        }
-      } catch {
-        // Supabase unavailable, fall through to localStorage
-      }
-
-      return null
-    }
-
     async function load() {
       setLoading(true)
-
-      const cloudData = await loadFromSupabase()
-
-      if (!cancelled) {
-        if (cloudData && cloudData.length > 0) {
-          setUserApartments(cloudData)
-          setDataSource('cloud')
-        } else {
-          // Fallback to localStorage
-          const localData = loadUserApartments()
-          setUserApartments(localData)
-          setDataSource(localData.length > 0 ? 'local' : 'demo')
-        }
-        setLoading(false)
+      if (!organization?.id || !user?.id) { if (!cancelled) { setUserApartments([]); setLoading(false) }; return }
+      try {
+        const result = await opportunityRepository.list({ organizationId: organization.id, userId: user.id })
+        if (!cancelled) setUserApartments(result.data ?? [])
+      } catch {
+        if (!cancelled) setUserApartments([])
       }
+      if (!cancelled) setLoading(false)
     }
 
     load()
@@ -78,19 +54,23 @@ export function RentDashboardPage() {
   }, [organization?.id, user?.id])
 
   const allApartments = useMemo(() => {
-    return [...SAMPLE_APARTMENTS, ...userApartments]
+    return userApartments
   }, [userApartments])
 
   const scoredApartments = useMemo(() => {
     return allApartments.map((apartment) => {
-      const result = scoreRentalApartment(apartment, preferences)
+      const normalized = normalizeRentListing(apartment)
+      const result = scoreRentOpportunity(normalized, toRentModulePreferences(preferences))
       return {
         ...apartment,
-        score: result.score,
+        score: result.totalScore,
         recommendation: result.recommendation,
+        confidenceScore: result.confidenceScore,
+        missingData: result.missingData,
+        scoreBreakdown: result.scoreBreakdown,
       }
     }).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-  }, [preferences])
+  }, [allApartments, preferences])
 
   const counts = useMemo(() => {
     const all = scoredApartments
@@ -145,13 +125,13 @@ export function RentDashboardPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <div className="space-y-2">
-        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Rent Intelligence</h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Rent</h1>
         <p className="text-base sm:text-lg text-foreground/70">
-          Find the best apartment to rent, and why.
+          Find the best rental opportunity and understand why it fits.
         </p>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Compare rental apartments using budget, lifestyle, commute, comfort, and missing-data checks.
-          Adjust your preferences below to see which listings fit you best.
+          Evaluate rental opportunities using budget, location, comfort, and data completeness.
+          Adjust your preferences below to see which opportunities fit you best.
         </p>
       </div>
 
@@ -164,21 +144,8 @@ export function RentDashboardPage() {
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          {dataSource === 'cloud' && (
-            <Badge variant="default" className="gap-1">
-              <Cloud className="h-3 w-3" /> Cloud data
-            </Badge>
-          )}
-          {dataSource === 'local' && (
-            <Badge variant="secondary" className="gap-1">
-              <Database className="h-3 w-3" /> Local data
-            </Badge>
-          )}
-          {dataSource === 'demo' && (
-            <Badge variant="secondary">Demo data</Badge>
-          )}
           <span className="text-xs text-muted-foreground">
-            Showing {filteredApartments.length} of {allApartments.length} apartments
+            {filteredApartments.length} opportunities
           </span>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -197,8 +164,9 @@ export function RentDashboardPage() {
               <SelectItem value="all">All Recommendations</SelectItem>
               <SelectItem value="Excellent Fit">Excellent Fit</SelectItem>
               <SelectItem value="Good Fit">Good Fit</SelectItem>
-              <SelectItem value="Watch">Watch</SelectItem>
-              <SelectItem value="Avoid">Avoid</SelectItem>
+              <SelectItem value="Possible Fit">Possible Fit</SelectItem>
+              <SelectItem value="Weak Fit">Weak Fit</SelectItem>
+              <SelectItem value="Reject">Reject</SelectItem>
             </SelectContent>
           </Select>
           <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
@@ -221,28 +189,52 @@ export function RentDashboardPage() {
           </Button>
           <Button onClick={() => navigate('/rent/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
             <Plus className="mr-2 h-4 w-4" />
-            New Listing
+            New Opportunity
           </Button>
         </div>
       </div>
 
       <RentPreferencesPanel preferences={preferences} onChange={setPreferences} />
 
-      <div className="space-y-4">
-        <h2 className="font-display text-xl font-semibold">Matching Apartments</h2>
+        <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-xl font-semibold">Opportunities</h2>
+          <div className="flex items-center gap-1 border rounded-md p-0.5">
+            <Button
+              variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2.5"
+              onClick={() => { setViewMode('cards'); localStorage.setItem('rent:viewMode', 'cards') }}
+            >
+              <SquaresFour className="h-4 w-4 mr-1" />Cards
+            </Button>
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 px-2.5"
+              onClick={() => { setViewMode('list'); localStorage.setItem('rent:viewMode', 'list') }}
+            >
+              <List className="h-4 w-4 mr-1" />List
+            </Button>
+          </div>
+        </div>
 
-        {filteredApartments.length === 0 ? (
-          <div className="border-dashed border rounded-lg p-10 text-center">
-            <p className="text-muted-foreground">
-              No apartments match your current preferences. Try relaxing some filters.
-            </p>
-          </div>
+        {viewMode === 'cards' ? (
+          filteredApartments.length === 0 ? (
+            <div className="border-dashed border rounded-lg p-10 text-center">
+              <p className="text-muted-foreground">
+                No opportunities match your current preferences. Try relaxing some filters.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredApartments.map((apartment) => (
+                <RentOpportunityCard key={apartment.id} apartment={apartment} />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredApartments.map((apartment) => (
-              <RentOpportunityCard key={apartment.id} apartment={apartment} />
-            ))}
-          </div>
+          <RentOpportunityTable apartments={filteredApartments} />
         )}
       </div>
     </div>

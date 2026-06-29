@@ -9,8 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { saveUserApartment } from '../services/rentStorage'
-import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
+import { opportunityRepository } from '../repositories/OpportunityRepository'
 import type { RentalApartment } from '../types'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -110,7 +109,7 @@ export function NewRentOpportunityPage() {
     try {
       // Try Supabase first
       if (organization?.id && user?.id) {
-        const result = await rentSupabaseAdapter.createRentApartment(apartment, {
+        const result = await opportunityRepository.create(apartment, {
           organizationId: organization.id,
           userId: user.id,
         })
@@ -123,7 +122,7 @@ export function NewRentOpportunityPage() {
         }
       }
 
-      // Fallback to localStorage
+      // No fallback - Supabase only
       saveUserApartment(apartment)
       setSaveMode('local')
       toast.success('Saved locally.')
@@ -255,7 +254,7 @@ export function NewRentOpportunityPage() {
             <Button type="button" variant="outline" onClick={() => navigate('/rent')} disabled={isSaving}>Cancel</Button>
             <Button type="submit" disabled={isSaving} className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Plus className="mr-2 h-4 w-4" />
-              {isSaving ? 'Saving...' : 'Save Listing'}
+              {isSaving ? 'Saving...' : 'Save Opportunity'}
             </Button>
           </div>
         </form>

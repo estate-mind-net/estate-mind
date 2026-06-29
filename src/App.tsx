@@ -33,7 +33,10 @@ import { OpportunityHunterDetailPage } from '@/pages/OpportunityHunterDetailPage
 import { OpportunityHunterRunDetailPage } from '@/pages/OpportunityHunterRunDetailPage'
 import { RentDashboardPage } from '@/modules/rent/pages/RentDashboardPage'
 import { NewRentOpportunityPage } from '@/modules/rent/pages/NewRentOpportunityPage'
-import { RentOpportunityDetailPage } from '@/modules/rent/pages/RentOpportunityDetailPage'
+import { RentDecisionWorkspacePage } from '@/modules/rent/pages/RentDecisionWorkspacePage'
+import { MyDecisionsPage } from '@/modules/opportunity-intelligence/pages/MyDecisionsPage'
+import { HunterLandingPage } from '@/modules/opportunity-intelligence/pages/HunterLandingPage'
+import { DataManagementPage } from '@/modules/opportunity-intelligence/data-management'
 import { EditRentOpportunityPage } from '@/modules/rent/pages/EditRentOpportunityPage'
 import { RentComparisonPage } from '@/modules/rent/pages/RentComparisonPage'
 import { RentHunterFormPage } from '@/modules/rent/hunter/pages/RentHunterFormPage'
@@ -257,6 +260,7 @@ function App() {
           <Route path="/reports" element={<WorkspaceShell><ReportsContent /></WorkspaceShell>} />
           <Route path="/compare" element={<WorkspaceShell><PropertyComparisonPage /></WorkspaceShell>} />
           <Route path="/settings" element={<WorkspaceShell><SettingsPage /></WorkspaceShell>} />
+          <Route path="/settings/data-management" element={<WorkspaceShell><DataManagementPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter" element={<WorkspaceShell><OpportunityHunterDashboardPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter/runs/:runId" element={<WorkspaceShell><OpportunityHunterRunDetailPage /></WorkspaceShell>} />
           <Route path="/opportunity-hunter/new" element={<WorkspaceShell><OpportunityHunterFormPage /></WorkspaceShell>} />
@@ -275,6 +279,10 @@ function App() {
           <Route path="/portfolio" element={<WorkspaceShell><PortfolioDashboard /></WorkspaceShell>} />
           <Route path="/analytics" element={<WorkspaceShell><PortfolioAnalytics onBack={() => navigate('/dashboard')} /></WorkspaceShell>} />
 
+          <Route path="/decisions" element={<WorkspaceShell><MyDecisionsPage /></WorkspaceShell>} />
+          <Route path="/hunter" element={<WorkspaceShell><HunterLandingPage /></WorkspaceShell>} />
+          <Route path="/my-opportunities" element={<Navigate to="/decisions" replace />} />
+          <Route path="/opportunities" element={<Navigate to="/decisions" replace />} />
           <Route path="/rent" element={<WorkspaceShell><RentDashboardPage /></WorkspaceShell>} />
           <Route path="/rent/new" element={<WorkspaceShell><NewRentOpportunityPage /></WorkspaceShell>} />
           <Route path="/rent/compare" element={<WorkspaceShell><RentComparisonPage /></WorkspaceShell>} />
@@ -283,7 +291,7 @@ function App() {
           <Route path="/rent/hunter/import-url" element={<WorkspaceShell><RentImportUrlPage /></WorkspaceShell>} />
           <Route path="/rent/hunter/manual-completion/:rawId" element={<WorkspaceShell><RentManualCompletionPage /></WorkspaceShell>} />
           <Route path="/rent/hunter/:id" element={<WorkspaceShell><RentHunterDetailPage /></WorkspaceShell>} />
-          <Route path="/rent/:id" element={<WorkspaceShell><RentOpportunityDetailPage /></WorkspaceShell>} />
+          <Route path="/rent/:id" element={<WorkspaceShell><RentDecisionWorkspacePage /></WorkspaceShell>} />
           <Route path="/rent/:id/edit" element={<WorkspaceShell><EditRentOpportunityPage /></WorkspaceShell>} />
           <Route path="/buy" element={<WorkspaceShell><BuyDashboardPage /></WorkspaceShell>} />
           <Route path="/invest" element={<WorkspaceShell><InvestDashboardPage /></WorkspaceShell>} />

@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Brain, MagnifyingGlass, Plus, X } from '@phosphor-icons/react'
+import { ArrowLeft, Brain, MagnifyingGlass, Plus, Rocket, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { HunterMatchCard, type MatchWithRaw } from '@/modules/shared/hunter'
+import { HunterSourceDialog, type SourceType, type SourceForm, emptySource, sourceToForm, buildSourcePayload } from '@/modules/shared/hunter/components/HunterSourceDialog'
 import { useAuth } from '@/hooks/useAuth'
 import { opportunityHunterService } from '@/services/supabase/opportunityHunter.service'
 import { triggerDiscoveryRun } from '@/services/api/discovery.service'
 import { rentSupabaseAdapter } from '@/modules/rent/services/rentSupabaseAdapter'
 import type { InvestmentSearchBrief, OpportunitySource } from '@/lib/types/opportunityHunter'
 import type { RentalApartment } from '@/modules/rent/types'
+
+const RENT_SOURCE_TYPES: SourceType[] = ['manual_url', 'rent_demo', 'saved_search', 'web_search', 'rent_web_search', 'portal_search', 'live_scraper']
 
 type RentBrief = InvestmentSearchBrief & {
   module_type?: string
@@ -43,6 +46,11 @@ export function RentHunterDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRunning, setIsRunning] = useState(false)
   const [savingMatchId, setSavingMatchId] = useState<string | null>(null)
+  const [isSourceDialogOpen, setIsSourceDialogOpen] = useState(false)
+  const [sourceForm, setSourceForm] = useState<SourceForm>({ ...emptySource, type: 'saved_search' })
+  const [isSavingSource, setIsSavingSource] = useState(false)
+  const [lastRunDiagnostics, setLastRunDiagnostics] = useState<Record<string, unknown> | null>(null)
+  const [convertingSourceId, setConvertingSourceId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id || !organization?.id) { setIsLoading(false); return }
@@ -68,6 +76,40 @@ export function RentHunterDetailPage() {
         setBrief(briefData as RentBrief)
         setMatches(matchData as MatchWithRaw[])
         setAssignedSources(briefSources)
+
+        // Load last run diagnostics
+        if (briefSources.length > 0) {
+          const { getSupabaseClient } = await import('@/services/supabase/client')
+          const supabase = getSupabaseClient()
+          if (supabase) {
+            const sourceIds = briefSources.map((s: OpportunitySource) => s.id)
+            const { data: runRows } = await supabase
+              .from('source_connector_runs')
+              .select('metadata, status, error_message, opportunities_fetched, opportunities_inserted, opportunities_matched')
+              .eq('organization_id', organization!.id)
+              .in('source_id', sourceIds)
+              .order('started_at', { ascending: false })
+              .limit(1)
+            const rows = runRows as Array<{
+              metadata: Record<string, unknown>
+              status: string
+              error_message: string | null
+              opportunities_fetched: number
+              opportunities_inserted: number
+              opportunities_matched: number
+            }> | null
+            if (rows && rows.length > 0) {
+              setLastRunDiagnostics({
+                ...rows[0].metadata,
+                run_status: rows[0].status,
+                error_message: rows[0].error_message,
+                opportunities_fetched: rows[0].opportunities_fetched,
+                opportunities_inserted: rows[0].opportunities_inserted,
+                opportunities_matched: rows[0].opportunities_matched,
+              })
+            }
+          }
+        }
 
         // Available = all rent sources not yet assigned
         const assignedIds = new Set(briefSources.map((s) => s.id))
@@ -113,6 +155,52 @@ export function RentHunterDetailPage() {
       toast.success('Source assigned to brief.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to assign source.')
+    }
+  }
+
+  const handleConvertToLiveScraper = async (source: OpportunitySource) => {
+    if (!organization?.id || !id) return
+    setConvertingSourceId(source.id)
+    try {
+      const config = (source.connector_config ?? {}) as Record<string, unknown>
+      const portal = typeof config.portal === 'string' ? config.portal : '4zida'
+      const city = typeof config.city === 'string' ? config.city : brief?.cities?.[0] ?? 'Novi Sad'
+
+      // Create new live_scraper source with same criteria
+      const newSource = await opportunityHunterService.createSource(organization.id, {
+        name: source.name.replace(/portal.?search/i, 'Live Scraper').trim() || `${source.name} (Live)`,
+        type: 'live_scraper',
+        source_url: null,
+        seed_urls: [],
+        connector_config: {
+          portal: portal.toLowerCase() === 'halo oglasi' ? 'halooglasi' : portal.toLowerCase() === '4zida' ? '4zida' : '4zida',
+          city,
+          districts: Array.isArray(config.districts) ? config.districts : brief?.districts ?? [],
+          maxPages: 2,
+        },
+        terms_checked: true,
+        allowed_use_notes: 'Converted from portal_search',
+        rate_limit_per_hour: source.rate_limit_per_hour ?? 24,
+        contact_email: null,
+        is_enabled: true,
+        module_type: 'rent',
+      })
+
+      // Assign new source to brief
+      if (id) {
+        await opportunityHunterService.assignSourceToBrief(id, newSource.id)
+        setAssignedSources((prev) => [...prev, newSource])
+      }
+
+      // Remove old source from brief
+      await opportunityHunterService.removeSourceFromBrief(id, source.id)
+      setAssignedSources((prev) => prev.filter((s) => s.id !== source.id))
+
+      toast.success('Converted to Live Scraper. Update Opportunities to test.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to convert source.')
+    } finally {
+      setConvertingSourceId(null)
     }
   }
 
@@ -289,16 +377,21 @@ export function RentHunterDetailPage() {
         )}
       </Card>
 
-      {/* Sources for this Brief */}
+        {/* Sources for this Brief */}
       <Card className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h2 className="font-display text-xl font-semibold">Sources</h2>
-          {!showAddSource && availableSources.length > 0 && (
-            <Button variant="outline" size="sm" onClick={() => setShowAddSource(true)}>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setSourceForm({ ...emptySource, type: 'saved_search' }); setIsSourceDialogOpen(true) }}>
               <Plus className="mr-1 h-3 w-3" />
-              Add Source
+              New Source
             </Button>
-          )}
+            {!showAddSource && availableSources.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => setShowAddSource(true)}>
+                Add Existing
+              </Button>
+            )}
+          </div>
         </div>
 
         {assignedSources.length === 0 && !showAddSource && (
@@ -310,20 +403,67 @@ export function RentHunterDetailPage() {
 
         {assignedSources.length > 0 && (
           <div className="space-y-2">
-            {assignedSources.map((source) => (
-              <div key={source.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`h-2 w-2 rounded-full shrink-0 ${source.is_enabled ? 'bg-green-500' : 'bg-muted-foreground'}`} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{source.name}</p>
-                    <p className="text-xs text-muted-foreground">{source.type}</p>
+            {assignedSources.map((source) => {
+              const config = source.connector_config && typeof source.connector_config === 'object'
+                ? source.connector_config as Record<string, unknown>
+                : null
+              const searchUrl = config && typeof config.searchUrl === 'string' ? config.searchUrl : null
+              const portal = config && typeof config.portal === 'string' ? config.portal : null
+              const notes = config && typeof config.notes === 'string' ? config.notes : null
+
+              return (
+                <div key={source.id} className="rounded-md border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`h-2 w-2 rounded-full shrink-0 ${source.is_enabled ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{source.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {portal ? `${portal} · ${source.type}` : source.type}
+                        </p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => handleRemoveSource(source.id)} className="shrink-0">
+                      <X className="h-3 w-3" />
+                    </Button>
                   </div>
+                  {notes && <p className="text-xs text-muted-foreground pl-5">{notes}</p>}
+
+                  {/* Portal search warning */}
+                  {source.type === 'portal_search' && (
+                    <div className="pl-5 space-y-1">
+                      <p className="text-xs text-amber-600">
+                        Portal search requires a configured search provider. Use live_scraper for direct portal discovery.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => handleConvertToLiveScraper(source)}
+                        disabled={convertingSourceId === source.id}
+                      >
+                        {convertingSourceId === source.id ? 'Converting...' : 'Convert to Live Scraper'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {source.type === 'saved_search' && (
+                    <div className="flex gap-2 pl-5">
+                      {searchUrl && (
+                        <Button variant="outline" size="sm" className="text-xs h-7" asChild>
+                          <a href={searchUrl} target="_blank" rel="noopener noreferrer">
+                            Open Search
+                          </a>
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => navigate('/rent/hunter/import-url')}>
+                        Import Listing URL
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => handleRemoveSource(source.id)} className="shrink-0">
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -357,7 +497,22 @@ export function RentHunterDetailPage() {
         )}
       </Card>
 
-      {/* Run Discovery */}
+      {/* Discovery Callout */}
+      {matches.length === 0 && assignedSources.length > 0 && (
+        <Card className="border-accent/50 bg-accent/5 p-4 flex items-start gap-3">
+          <Rocket className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-sm">
+              Run discovery to search for apartments matching your {brief.cities[0] ?? 'Novi Sad'} criteria.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {assignedSources.length} source{assignedSources.length !== 1 ? 's' : ''} configured — click below to start discovering.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {/* Update Opportunities */}
       <div className="flex justify-center">
         <Button onClick={handleRunDiscovery} disabled={isRunning}>
           <MagnifyingGlass className="mr-2 h-4 w-4" />
@@ -378,10 +533,115 @@ export function RentHunterDetailPage() {
             <p className="mt-2 text-muted-foreground">
               Run Rent Discovery to find apartments matching your criteria.
             </p>
+
+            {/* Last Run Diagnostics */}
+            {lastRunDiagnostics && (
+              <div className="mt-6 text-left">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Last Run Diagnostics</p>
+                <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1.5 font-mono">
+                  {/* Source info */}
+                  {lastRunDiagnostics.source_name && (
+                    <p>Source: <span className="font-semibold">{String(lastRunDiagnostics.source_name)}</span> ({String(lastRunDiagnostics.source_type ?? 'unknown')})</p>
+                  )}
+                  {lastRunDiagnostics.error_message && (
+                    <p className="text-destructive">Error: {String(lastRunDiagnostics.error_message)}</p>
+                  )}
+                  <p>Status: <span className="font-semibold">{String(lastRunDiagnostics.run_status ?? 'unknown')}</span></p>
+                  <p>Fetched: <span className="font-semibold">{String(lastRunDiagnostics.opportunities_fetched ?? 0)}</span> | Inserted: {String(lastRunDiagnostics.opportunities_inserted ?? 0)} | Matched: {String(lastRunDiagnostics.opportunities_matched ?? 0)}</p>
+
+                  {/* Provider info */}
+                  {lastRunDiagnostics.providerConfigured === false && (
+                    <p className="text-destructive font-semibold">
+                      ⚠ Search provider not configured. Add WEB_SEARCH_API_KEY to your environment.
+                    </p>
+                  )}
+                  {lastRunDiagnostics.providerConfigured === true && (
+                    <p className="text-green-600">✓ Provider: {String(lastRunDiagnostics.providerName ?? 'unknown')}</p>
+                  )}
+
+                  {/* Fallback info */}
+                  {lastRunDiagnostics.fallback_trigger && (
+                    <div className="border-l-2 border-amber-400 pl-2 space-y-0.5">
+                      <p className="text-amber-600">⚠ Portal search returned 0 — auto-fallback to live_scraper</p>
+                      <p>Fallback result: {String(lastRunDiagnostics.fallback_result ?? 'unknown')}</p>
+                      {lastRunDiagnostics.fallback_fetched != null && (
+                        <p>Fallback fetched: {String(lastRunDiagnostics.fallback_fetched)}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Query info */}
+                  {lastRunDiagnostics.generatedQueries && (
+                    <p>Queries: {(lastRunDiagnostics.generatedQueries as string[]).length} generated</p>
+                  )}
+                  {lastRunDiagnostics.totalResultsBeforeFiltering != null && (
+                    <p>Raw results: {String(lastRunDiagnostics.totalResultsBeforeFiltering)}</p>
+                  )}
+                  {lastRunDiagnostics.totalResultsAfterRentalKeywordFilter != null && (
+                    <p>After rental filter: {String(lastRunDiagnostics.totalResultsAfterRentalKeywordFilter)}</p>
+                  )}
+                  {lastRunDiagnostics.rentFilterRelaxed && (
+                    <p className="text-yellow-600">⚠ Rental keyword filter was relaxed</p>
+                  )}
+                  {lastRunDiagnostics.totalResultsAfterDedup != null && (
+                    <p>After dedup: {String(lastRunDiagnostics.totalResultsAfterDedup)}</p>
+                  )}
+                  {lastRunDiagnostics.configFilteredOut != null && Number(lastRunDiagnostics.configFilteredOut) > 0 && (
+                    <p className="text-yellow-600">Config-filtered out: {String(lastRunDiagnostics.configFilteredOut)}</p>
+                  )}
+                  {lastRunDiagnostics.rawOpportunitiesReturned != null && (
+                    <p>Opportunities returned: {String(lastRunDiagnostics.rawOpportunitiesReturned)}</p>
+                  )}
+
+                  {/* Validation rejections */}
+                  {lastRunDiagnostics.pre_save_rejections_count != null && Number(lastRunDiagnostics.pre_save_rejections_count) > 0 && (
+                    <p className="text-yellow-600">Pre-save rejections: {String(lastRunDiagnostics.pre_save_rejections_count)}</p>
+                  )}
+                  {lastRunDiagnostics.validation_rejections && Array.isArray(lastRunDiagnostics.validation_rejections) && (lastRunDiagnostics.validation_rejections as Array<Record<string, unknown>>).length > 0 && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-muted-foreground">Validation rejections ({(lastRunDiagnostics.validation_rejections as Array<unknown>).length})</summary>
+                      <div className="mt-1 space-y-0.5 pl-2 max-h-40 overflow-y-auto">
+                        {(lastRunDiagnostics.validation_rejections as Array<Record<string, unknown>>).slice(0, 5).map((rej, i) => (
+                          <p key={i} className="text-destructive">
+                            {String(rej.rejection_reasons ?? rej.rejection_reason ?? 'unknown')}: {String(rej.title ?? rej.source_url ?? '')}
+                          </p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Query breakdown */}
+                  {lastRunDiagnostics.queryResultsCount && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-muted-foreground">Query results breakdown</summary>
+                      <div className="mt-1 space-y-0.5 pl-2">
+                        {Object.entries(lastRunDiagnostics.queryResultsCount as Record<string, number>).map(([query, count]) => (
+                          <p key={query} className={count < 0 ? 'text-destructive' : ''}>
+                            {count < 0 ? '✗' : '•'} {query}: {count < 0 ? 'error' : `${count} results`}
+                          </p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Errors */}
+                  {lastRunDiagnostics.errors && Array.isArray(lastRunDiagnostics.errors) && (lastRunDiagnostics.errors as Array<string>).length > 0 && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-destructive">Errors ({(lastRunDiagnostics.errors as Array<string>).length})</summary>
+                      <div className="mt-1 space-y-0.5 pl-2">
+                        {(lastRunDiagnostics.errors as Array<string>).slice(0, 5).map((err, i) => (
+                          <p key={i} className="text-destructive">{String(err)}</p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </div>
+            )}
           </Card>
         ) : (
           <div className="space-y-4">
-          {sortedMatches.map((match) => (
+            {sortedMatches.map((match) => (
               <HunterMatchCard
                 key={match.id}
                 match={match}
@@ -393,6 +653,43 @@ export function RentHunterDetailPage() {
           </div>
         )}
       </div>
+
+      <HunterSourceDialog
+        open={isSourceDialogOpen}
+        onOpenChange={setIsSourceDialogOpen}
+        editingSourceId={null}
+        sourceForm={sourceForm}
+        onFormChange={setSourceForm}
+        onSave={async () => {
+          if (!organization?.id || !sourceForm.name.trim()) {
+            toast.error('Source name is required.')
+            return
+          }
+          setIsSavingSource(true)
+          try {
+            const payload = buildSourcePayload(sourceForm)
+            const newSource = await opportunityHunterService.createSource(organization.id, {
+              ...payload,
+              module_type: 'rent',
+            })
+            if (id) {
+              await opportunityHunterService.assignSourceToBrief(id, newSource.id)
+              setAssignedSources((prev) => [...prev, newSource])
+            } else {
+              setAvailableSources((prev) => [...prev, newSource])
+            }
+            setIsSourceDialogOpen(false)
+            toast.success('Source created and assigned.')
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to create source.')
+          } finally {
+            setIsSavingSource(false)
+          }
+        }}
+        onCancel={() => setIsSourceDialogOpen(false)}
+        isSaving={isSavingSource}
+        supportedSourceTypes={RENT_SOURCE_TYPES}
+      />
     </div>
   )
 }

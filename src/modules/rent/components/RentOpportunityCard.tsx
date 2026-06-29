@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { ArrowSquareOut } from '@phosphor-icons/react'
 import type { RentalApartment, RentRecommendation, RentalStatus } from '../types'
 import { RENTAL_STATUS_LABELS } from '../types'
 
@@ -21,6 +22,9 @@ const statusVariant: Record<RentalStatus, 'default' | 'secondary' | 'destructive
 const recommendationVariant: Record<RentRecommendation, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   'Excellent Fit': 'default',
   'Good Fit': 'secondary',
+  'Possible Fit': 'outline',
+  'Weak Fit': 'destructive',
+  'Reject': 'destructive',
   Watch: 'outline',
   Avoid: 'destructive',
 }
@@ -46,7 +50,7 @@ export function RentOpportunityCard({ apartment }: RentOpportunityCardProps) {
   } = apartment
 
   return (
-    <Card className="p-5 space-y-4">
+    <Card className="p-5 space-y-4 hover:border-accent/30 transition-colors">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1 min-w-0">
           <h3 className="font-display text-lg font-semibold truncate">{title}</h3>
@@ -62,7 +66,7 @@ export function RentOpportunityCard({ apartment }: RentOpportunityCardProps) {
 
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div>
-          <p className="text-muted-foreground">Rent</p>
+          <p className="text-muted-foreground">Price</p>
           <p className="font-semibold">{currency} {monthlyRent}/mo</p>
         </div>
         <div>
@@ -93,19 +97,39 @@ export function RentOpportunityCard({ apartment }: RentOpportunityCardProps) {
         {recommendation && (
           <Badge variant={recommendationVariant[recommendation]}>{recommendation}</Badge>
         )}
+        {apartment.confidenceScore !== undefined && (
+          <Badge variant="outline" className="text-xs">Confidence: {apartment.confidenceScore}%</Badge>
+        )}
+        {apartment.missingData && apartment.missingData.length > 0 && (
+          <Badge variant="outline" className="text-xs text-amber-600">{apartment.missingData.length} missing</Badge>
+        )}
       </div>
       {nextAction && (
         <p className="text-xs text-muted-foreground truncate">Next: {nextAction}</p>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-full"
-        onClick={() => navigate(`/rent/${apartment.id}`)}
-      >
-        View Details
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1"
+          onClick={() => navigate(`/rent/${apartment.id}`)}
+        >
+          Analyze
+        </Button>
+        {apartment.listingUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            asChild
+          >
+            <a href={apartment.listingUrl} target="_blank" rel="noopener noreferrer" title="Open original listing">
+              <ArrowSquareOut className="h-4 w-4" />
+            </a>
+          </Button>
+        )}
+      </div>
     </Card>
   )
 }

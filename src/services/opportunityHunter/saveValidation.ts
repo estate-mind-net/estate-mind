@@ -5,6 +5,27 @@ export type SaveValidationResult = {
   reasons: string[]
 }
 
+/**
+ * Source types where missing price/size is acceptable.
+ * These are search-based connectors that extract from snippets —
+ * data will be marked needs_manual_completion instead of rejected.
+ */
+const RENT_SEARCH_SOURCE_TYPES = new Set([
+  'portal_search',
+  'rent_web_search',
+  'manual_url',
+  'live_scraper',
+])
+
+const isRentSearchType = (item: RawOpportunity): boolean => {
+  const rawPayload = (item.raw_payload ?? {}) as Record<string, unknown>
+  const origin = typeof rawPayload.origin === 'string' ? rawPayload.origin : ''
+  // Check raw_payload origin or module_type for rent context
+  if (RENT_SEARCH_SOURCE_TYPES.has(origin)) return true
+  if (rawPayload.module_type === 'rent') return true
+  return false
+}
+
 const toLower = (value: string | null | undefined): string => (value ?? '').trim().toLowerCase()
 
 const getUrlParts = (value: string | null | undefined): { hostname: string; path: string; query: string } => {
@@ -65,8 +86,15 @@ export const validateRawOpportunityForSave = (item: RawOpportunity): SaveValidat
     reasons.push('rejected_agency_url')
   }
 
+  const allowPartialData = isRentSearchType(item)
+
   if (isCategoryOrSearchPath(path, query)) {
-    reasons.push('rejected_category_or_search_page')
+    if (!allowPartialData) {
+      reasons.push('rejected_category_or_search_page')
+    }
+    // Rent search types: allow URLs with query params (e.g. ?sort=, ?page=)
+    // since search engine results typically return individual listing URLs
+    // that happen to have query parameters from the search engine
   }
 
   if (/\bagency\b/i.test(title) && !(is4zida && is4zidaListing)) {
@@ -78,7 +106,10 @@ export const validateRawOpportunityForSave = (item: RawOpportunity): SaveValidat
   }
 
   if (isMissingNumber(item.price)) {
-    reasons.push('rejected_missing_price')
+    if (!allowPartialData) {
+      reasons.push('rejected_missing_price')
+    }
+    // Rent search types: allow null price, mark as needs_manual_completion
   }
 
   if (!city || city === 'n/a' || city === 'unknown city' || city === 'unknown') {
@@ -86,7 +117,10 @@ export const validateRawOpportunityForSave = (item: RawOpportunity): SaveValidat
   }
 
   if (isMissingNumber(item.size_m2)) {
-    reasons.push('rejected_missing_size')
+    if (!allowPartialData) {
+      reasons.push('rejected_missing_size')
+    }
+    // Rent search types: allow null size, mark as needs_manual_completion
   }
 
   if (isEstitor) {

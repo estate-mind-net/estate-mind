@@ -273,9 +273,62 @@ export const runDiscoveryForBriefAndSource = async (
       },
     })
 
-    const fetchedRaw = await connector.fetchOpportunities({ organizationId, brief, source, onTrace })
+    let fetchedRaw = await connector.fetchOpportunities({ organizationId, brief, source, onTrace })
     if (extractedOpportunitiesCount === 0) {
       extractedOpportunitiesCount = fetchedRaw.length
+    }
+
+    // ── Automatic fallback: portal_search → live_scraper ─────────
+    if (fetchedRaw.length === 0 && source.type === 'portal_search') {
+      const portalConfig = (source.connector_config ?? {}) as Record<string, unknown>
+      const portal = typeof portalConfig.portal === 'string' ? portalConfig.portal : null
+
+      onTrace?.({
+        stage: 'connector_execution',
+        data: {
+          fallback_trigger: 'portal_search_returned_zero',
+          original_source_type: source.type,
+          portal,
+          fallback_to: 'live_scraper',
+        },
+      })
+
+      // Build a temporary source config for live_scraper
+      const fallbackSource: OpportunitySource = {
+        ...source,
+        type: 'live_scraper',
+        connector_config: {
+          portal: portal === '4zida' || portal === '4Zida' ? '4zida' : portal === 'halooglasi' || portal === 'Halo Oglasi' ? 'halooglasi' : '4zida',
+          city: portalConfig.city ?? brief.cities[0] ?? 'Novi Sad',
+          districts: Array.isArray(portalConfig.districts) ? portalConfig.districts : brief.districts ?? [],
+          maxPages: 2,
+        },
+      }
+
+      const fallbackConnector = resolveConnector(fallbackSource)
+      if (fallbackConnector) {
+        try {
+          fetchedRaw = await fallbackConnector.fetchOpportunities({ organizationId, brief, source: fallbackSource, onTrace })
+          if (extractedOpportunitiesCount === 0) {
+            extractedOpportunitiesCount = fetchedRaw.length
+          }
+          onTrace?.({
+            stage: 'connector_execution',
+            data: {
+              fallback_result: fetchedRaw.length > 0 ? 'fallback_succeeded' : 'fallback_also_empty',
+              fallback_fetched: fetchedRaw.length,
+            },
+          })
+        } catch (fallbackError) {
+          onTrace?.({
+            stage: 'error',
+            data: {
+              message: `Fallback live_scraper also failed: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`,
+              fallback_result: 'fallback_failed',
+            },
+          })
+        }
+      }
     }
 
     console.log('[DISCOVERY TRACE]', {
@@ -286,12 +339,47 @@ export const runDiscoveryForBriefAndSource = async (
       fetchedCount: fetchedRaw.length,
     })
 
+    // Log first raw result for debugging
+    if (fetchedRaw.length > 0) {
+      console.log('[DISCOVERY TRACE]', {
+        stage: 'first_raw_result_sample',
+        runId: run.id,
+        sourceId: source.id,
+        sample: {
+          title: fetchedRaw[0].title,
+          source_url: fetchedRaw[0].source_url,
+          city: fetchedRaw[0].city,
+          price: fetchedRaw[0].price,
+          size_m2: fetchedRaw[0].size_m2,
+          bedrooms: fetchedRaw[0].bedrooms,
+          country: fetchedRaw[0].country,
+          property_type: fetchedRaw[0].property_type,
+          raw_payload_origin: (fetchedRaw[0].raw_payload as Record<string, unknown>)?.origin,
+          raw_payload_module_type: (fetchedRaw[0].raw_payload as Record<string, unknown>)?.module_type,
+        },
+      })
+    }
+
     const normalized = fetchedRaw.map((item) => normalizeRawOpportunity({
       ...item,
       organization_id: organizationId,
       source_id: source.id,
       connector_run_id: run.id,
     }))
+
+    // Post-fetch diagnostics
+    const postFetchDiagnostics: Record<string, unknown> = {
+      connectorReturnedCount: fetchedRaw.length,
+      validationAcceptedCount: 0,
+      validationRejectedCount: 0,
+      validationRejectedReasons: {} as Record<string, number>,
+      validationRejectedSamples: [] as Array<Record<string, unknown>>,
+      dedupeInputCount: 0,
+      dedupeOutputCount: 0,
+      insertAttemptCount: 0,
+      insertSuccessCount: 0,
+      insertErrorMessages: [] as string[],
+    }
 
     const preSaveRejections: Array<Record<string, unknown>> = []
     const validNormalized: RawOpportunity[] = []
@@ -300,6 +388,24 @@ export const runDiscoveryForBriefAndSource = async (
       if (validation.accepted) {
         validNormalized.push(item)
         continue
+      }
+
+      // Count rejection reasons
+      for (const reason of validation.reasons) {
+        ;(postFetchDiagnostics.validationRejectedReasons as Record<string, number>)[reason] =
+          ((postFetchDiagnostics.validationRejectedReasons as Record<string, number>)[reason] ?? 0) + 1
+      }
+
+      // Sample first 3 rejections
+      if ((postFetchDiagnostics.validationRejectedSamples as Array<Record<string, unknown>>).length < 3) {
+        ;(postFetchDiagnostics.validationRejectedSamples as Array<Record<string, unknown>>).push({
+          source_url: item.source_url ?? '',
+          title: item.title,
+          city: item.city ?? '',
+          price: item.price ?? null,
+          size_m2: item.size_m2 ?? null,
+          rejection_reasons: validation.reasons,
+        })
       }
 
       preSaveRejections.push({
@@ -313,11 +419,24 @@ export const runDiscoveryForBriefAndSource = async (
       })
     }
 
+    postFetchDiagnostics.validationAcceptedCount = validNormalized.length
+    postFetchDiagnostics.validationRejectedCount = preSaveRejections.length
+
+    console.log('[DISCOVERY TRACE]', {
+      stage: 'post_fetch_validation',
+      runId: run.id,
+      sourceId: source.id,
+      briefId: brief.id,
+      ...postFetchDiagnostics,
+    })
+
     if (preSaveRejections.length > 0) {
       validationRejections = [...validationRejections, ...preSaveRejections]
     }
 
+    postFetchDiagnostics.dedupeInputCount = validNormalized.length
     const { canonical, duplicates } = deduplicateRawOpportunities(validNormalized)
+    postFetchDiagnostics.dedupeOutputCount = canonical.length
     console.log('[DISCOVERY TRACE]', {
       stage: 'opportunities_deduplicated',
       runId: run.id,
@@ -327,13 +446,28 @@ export const runDiscoveryForBriefAndSource = async (
       deduplicatedCount: duplicates.length,
     })
 
-    const insertedRows = await repo.insertRawOpportunities([...canonical, ...duplicates])
+    postFetchDiagnostics.insertAttemptCount = canonical.length + duplicates.length
+    let insertedRows: RawOpportunity[] = []
+    try {
+      insertedRows = await repo.insertRawOpportunities([...canonical, ...duplicates])
+      postFetchDiagnostics.insertSuccessCount = insertedRows.length
+    } catch (insertError) {
+      const errMsg = insertError instanceof Error ? insertError.message : 'Unknown insert error'
+      ;(postFetchDiagnostics.insertErrorMessages as string[]).push(errMsg)
+      console.error('[DISCOVERY TRACE]', {
+        stage: 'insert_error',
+        runId: run.id,
+        sourceId: source.id,
+        error: errMsg,
+      })
+    }
     console.log('[DISCOVERY TRACE]', {
       stage: 'raw_opportunities_inserted',
       runId: run.id,
       sourceId: source.id,
       briefId: brief.id,
       insertedCount: insertedRows.length,
+      ...postFetchDiagnostics,
     })
 
     const canonicalRows = insertedRows.filter((row) => !row.is_duplicate)

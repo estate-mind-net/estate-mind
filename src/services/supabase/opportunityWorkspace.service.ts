@@ -21,6 +21,7 @@ type PropertyRow = {
   updated_at: string | null
   module_type: string | null
   module_data: Record<string, unknown> | null
+  listing_url: string | null
 }
 
 type OpportunityRow = {
@@ -249,6 +250,7 @@ const mapPropertyRow = (row: PropertyRow): Property => ({
   sizeSqm: row.area_sqm ?? 0,
   bedrooms: row.bedrooms ?? 0,
   condition: (row.condition ?? 'good') as Property['condition'],
+  listingUrl: row.listing_url ?? undefined,
   description: row.description ?? '',
   createdAt: row.created_at ?? row.updated_at ?? new Date().toISOString(),
 })
@@ -847,7 +849,7 @@ export class OpportunityWorkspaceService {
         .order('created_at', { ascending: false }),
       client
         .from('properties')
-        .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at,module_type,module_data')
+        .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at,module_type,module_data,listing_url')
         .eq('organization_id', organizationId)
         .eq('module_type', moduleType),
       client
@@ -918,7 +920,7 @@ export class OpportunityWorkspaceService {
 
     const propertyResult = await client
       .from('properties')
-      .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at,module_type,module_data')
+      .select('id,title,city,country,address,property_type,asking_price,currency,area_sqm,bedrooms,condition,description,created_at,updated_at,module_type,module_data,listing_url')
       .eq('organization_id', organizationId)
       .eq('id', opportunity.property_id)
       .maybeSingle()

@@ -1,8 +1,12 @@
+import { useNavigate } from 'react-router-dom'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Database } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
 
 export function SettingsPage() {
+  const navigate = useNavigate()
   const { profile, organization } = useAuth()
 
   return (
@@ -40,6 +44,11 @@ export function SettingsPage() {
             </Badge>
           </div>
         </div>
+      </Card>
+    <Card className="p-6">
+        <h2 className="font-display text-xl font-semibold flex items-center gap-2"><Database className="h-5 w-5 text-accent" />Data Management</h2>
+        <p className="mt-2 text-sm text-muted-foreground">Manage imported searches, opportunities, and local data.</p>
+        <Button variant="outline" className="mt-4" onClick={() => navigate('/settings/data-management')}>Open Data Management</Button>
       </Card>
     </div>
   )

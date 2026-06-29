@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Cloud, Database, FloppyDisk } from '@phosphor-icons/react'
+import { ArrowLeft, FloppyDisk } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,13 +10,11 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { getUserApartmentById, updateUserApartment, isUserApartment } from '../services/rentStorage'
-import { rentSupabaseAdapter } from '../services/rentSupabaseAdapter'
-import { SAMPLE_APARTMENTS } from '../data/sampleApartments'
+import { opportunityRepository } from '../repositories/OpportunityRepository'
 import type { RentalApartment } from '../types'
 import { useAuth } from '@/hooks/useAuth'
 
-type ApartmentSource = 'cloud' | 'local' | 'demo'
+
 
 type FormData = {
   title: string
@@ -71,7 +69,7 @@ export function EditRentOpportunityPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [formData, setFormData] = useState<FormData | null>(null)
   const [apartment, setApartment] = useState<RentalApartment | null>(null)
-  const [source, setSource] = useState<ApartmentSource>('demo')
+
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -80,10 +78,9 @@ export function EditRentOpportunityPage() {
     let cancelled = false
 
     async function load() {
-      // Try cloud first
       if (organization?.id && user?.id) {
         try {
-          const result = await rentSupabaseAdapter.getRentApartmentById(id!, {
+          const result = await opportunityRepository.getById(id!, {
             organizationId: organization.id,
             userId: user.id,
           })
@@ -91,31 +88,10 @@ export function EditRentOpportunityPage() {
             setApartment(result.data)
             setSource('cloud')
             setFormData(apartmentToForm(result.data))
-            setLoading(false)
-            return
           }
-        } catch {
-          // fall through
-        }
+        } catch { /* ignore */ }
       }
-
-      // Fallback: localStorage then demo
-      if (!cancelled) {
-        const local = getUserApartmentById(id!)
-        if (local) {
-          setApartment(local)
-          setSource('local')
-          setFormData(apartmentToForm(local))
-        } else {
-          const demo = SAMPLE_APARTMENTS.find((a) => a.id === id) ?? null
-          if (demo) {
-            setApartment(demo)
-            setSource('demo')
-            setFormData(apartmentToForm(demo))
-          }
-        }
-        setLoading(false)
-      }
+      if (!cancelled) { setLoading(false) }
     }
 
     load()
@@ -166,7 +142,7 @@ export function EditRentOpportunityPage() {
 
     try {
       if (source === 'cloud' && organization?.id) {
-        const result = await rentSupabaseAdapter.updateRentApartment(updated, {
+        const result = await opportunityRepository.update(updated, {
           organizationId: organization.id,
           userId: user?.id ?? '',
         })
@@ -182,7 +158,7 @@ export function EditRentOpportunityPage() {
         navigate(`/rent/${updated.id}`)
       }
     } catch {
-      // Fallback to localStorage
+      // No fallback - Supabase only
       try {
         updateUserApartment(updated)
         toast.success('Listing updated locally.')

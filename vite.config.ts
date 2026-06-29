@@ -136,6 +136,37 @@ const discoveryRunDevMiddleware = (): PluginOption => ({
   },
 })
 
+const ALLOWED_FETCH_HOSTS = ['4zida.rs', 'www.4zida.rs', 'halooglasi.com', 'www.halooglasi.com', 'cityexpert.rs', 'www.cityexpert.rs', 'nekretnine.rs', 'www.nekretnine.rs']
+
+const fetchUrlDevMiddleware = (): PluginOption => ({
+  name: 'fetch-url-dev-middleware',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      const path = (req.url ?? '').split('?')[0]
+      if (path !== '/api/fetch-url') { next(); return }
+      try {
+        const fullUrl = new URL(req.url ?? '/', 'http://127.0.0.1')
+        const targetUrl = fullUrl.searchParams.get('url')
+        if (!targetUrl) { res.statusCode = 400; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, error: 'Missing url parameter.' })); return }
+        let parsed: URL
+        try { parsed = new URL(targetUrl) } catch { res.statusCode = 400; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, error: 'Invalid URL.' })); return }
+        const hostAllowed = ALLOWED_FETCH_HOSTS.some((h) => parsed.hostname === h || parsed.hostname.endsWith('.' + h))
+        if (!hostAllowed) { res.statusCode = 200; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, html: null, status: 0, url: targetUrl, error: 'Host ' + parsed.hostname + ' not allowed.' })); return }
+        console.log('[fetch-url] Proxying:', targetUrl)
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 20000)
+        const response = await fetch(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Accept': 'text/html', 'Accept-Language': 'sr-RS,sr;q=0.9,en;q=0.8' }, signal: controller.signal, redirect: 'follow' })
+        clearTimeout(timeout)
+        if (!response.ok) { console.log('[fetch-url] HTTP', response.status, 'for', targetUrl); res.statusCode = 200; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, html: null, status: response.status, url: targetUrl, error: 'HTTP ' + response.status })); return }
+        const html = await response.text()
+        console.log('[fetch-url] Success:', targetUrl, '(' + html.length + ' chars)')
+        res.statusCode = 200; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: true, html, status: response.status, url: targetUrl }))
+      } catch (error) { console.error('[fetch-url] Error:', error); res.statusCode = 200; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, html: null, status: 0, url: '', error: error instanceof Error ? error.message : 'Fetch failed' })) }
+    })
+  },
+})
+
 const syncDiscoveryEnv = (env: Record<string, string>) => {
   const keys = [
     'NEXT_PUBLIC_SUPABASE_URL',
@@ -166,6 +197,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       dealAnalysisDevMiddleware(),
       discoveryRunDevMiddleware(),
+      fetchUrlDevMiddleware(),
       react(),
       tailwindcss(),
       // DO NOT REMOVE

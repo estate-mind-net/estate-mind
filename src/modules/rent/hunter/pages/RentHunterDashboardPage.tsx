@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Compass, Database, Link as LinkIcon, Plus, Pulse } from '@phosphor-icons/react'
+import { ArrowLeft, Compass, Database, MagnifyingGlass, Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
+import { createLimanPreset } from '../services/rentPresetService'
+import { ImportSearchDialog } from '@/modules/opportunity-intelligence/workspace/ImportSearchDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { opportunityHunterService } from '@/services/supabase/opportunityHunter.service'
+import { triggerDiscoveryRun } from '@/services/api/discovery.service'
 import { getSupabaseClient } from '@/services/supabase/client'
 import type { InvestmentSearchBrief, OpportunitySource, SourceConnectorRun } from '@/lib/types/opportunityHunter'
-
-// Source types supported by Rent Hunter:
-// rent_demo | manual_url | portal_manual_assisted | portal_api | web_search | partner_feed
 
 type RentBrief = InvestmentSearchBrief & {
   module_type?: string
@@ -29,16 +29,24 @@ type RentBrief = InvestmentSearchBrief & {
   }
 }
 
+type BriefStats = {
+  sources: OpportunitySource[]
+  lastRunDate: string | null
+  matchCount: number
+}
+
 export function RentHunterDashboardPage() {
   const navigate = useNavigate()
-  const { organization } = useAuth()
+  const { organization, user } = useAuth()
 
+  const importContext = organization?.id && user?.id ? { organizationId: organization.id, userId: user.id } : null
   const [briefs, setBriefs] = useState<RentBrief[]>([])
   const [sources, setSources] = useState<OpportunitySource[]>([])
-  const [lastRuns, setLastRuns] = useState<Record<string, SourceConnectorRun>>({})
-  const [matchCounts, setMatchCounts] = useState<Record<string, number>>({})
+  const [briefStats, setBriefStats] = useState<Record<string, BriefStats>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [isCreatingSource, setIsCreatingSource] = useState(false)
+  const [isCreatingDemo, setIsCreatingDemo] = useState(false)
+  const [runningBriefIds, setRunningBriefIds] = useState<Set<string>>(new Set())
+  const [isCreatingPreset, setIsCreatingPreset] = useState(false)
 
   useEffect(() => {
     if (!organization?.id) { setIsLoading(false); return }
@@ -56,43 +64,47 @@ export function RentHunterDashboardPage() {
         setBriefs(rentBriefs)
         setSources(rentSources)
 
-        // Load last run per source
+        // Load per-brief stats: sources, last run, match count
         const supabase = getSupabaseClient()
-        if (supabase && rentSources.length > 0) {
-          const sourceIds = rentSources.map((s) => s.id)
-          const { data: runRows } = await supabase
-            .from('source_connector_runs')
-            .select('*')
-            .eq('organization_id', organization!.id)
-            .in('source_id', sourceIds)
-            .order('started_at', { ascending: false })
-            .limit(50)
+        const stats: Record<string, BriefStats> = {}
 
-          if (!cancelled && runRows) {
-            const runsBySource: Record<string, SourceConnectorRun> = {}
-            for (const row of runRows as SourceConnectorRun[]) {
-              if (row.source_id && !runsBySource[row.source_id]) {
-                runsBySource[row.source_id] = row
-              }
+        for (const brief of rentBriefs) {
+          // Get sources assigned to this brief
+          const briefSources = await opportunityHunterService.listBriefSources(brief.id).catch(() => [])
+
+          // Get last run from source_connector_runs for this brief's sources
+          let lastRunDate: string | null = null
+          if (briefSources.length > 0 && supabase) {
+            const sourceIds = briefSources.map((s: OpportunitySource) => s.id)
+            const { data: runRows } = await supabase
+              .from('source_connector_runs')
+              .select('started_at')
+              .eq('organization_id', organization!.id)
+              .in('source_id', sourceIds)
+              .order('started_at', { ascending: false })
+              .limit(1)
+            const rows = runRows as Array<{ started_at: string }> | null
+            if (rows && rows.length > 0) {
+              lastRunDate = rows[0].started_at
             }
-            setLastRuns(runsBySource)
           }
+
+          // Get match count
+          let matchCount = 0
+          if (supabase) {
+            const { data: matchRows } = await supabase
+              .from('opportunity_matches')
+              .select('id')
+              .eq('brief_id', brief.id)
+              .eq('organization_id', organization!.id)
+            const rows = matchRows as Array<{ id: string }> | null
+            matchCount = rows?.length ?? 0
+          }
+
+          stats[brief.id] = { sources: briefSources, lastRunDate, matchCount }
         }
 
-        // Load match counts per brief
-        if (rentBriefs.length > 0 && supabase) {
-          const counts: Record<string, number> = {}
-          const briefIds = rentBriefs.map((b) => b.id)
-          const { data: matchRows } = await supabase
-            .from('opportunity_matches')
-            .select('brief_id')
-            .in('brief_id', briefIds)
-            .eq('organization_id', organization!.id)
-          for (const row of (matchRows ?? []) as Array<{ brief_id: string }>) {
-            counts[row.brief_id] = (counts[row.brief_id] ?? 0) + 1
-          }
-          if (!cancelled) setMatchCounts(counts)
-        }
+        if (!cancelled) setBriefStats(stats)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to load rent hunter data.')
       } finally {
@@ -109,37 +121,22 @@ export function RentHunterDashboardPage() {
   const sourceTypeLabel = (type: string): string => {
     const labels: Record<string, string> = {
       rent_demo: 'Demo',
-      manual_url: 'Manual URL',
+      manual_url: 'Manual',
       portal_manual_assisted: 'Portal Assisted',
       portal_api: 'Portal API',
       web_search: 'Web Search',
       partner_feed: 'Partner Feed',
+      saved_search: 'Saved Search',
+      rent_web_search: 'Rent Web Search',
+      live_scraper: 'Live Scraper',
+      portal_search: 'Portal Search',
     }
     return labels[type] ?? type
   }
 
-  const sourceStatusColor = (source: OpportunitySource): string => {
-    if (!source.is_enabled) return 'text-muted-foreground'
-    const run = lastRuns[source.id]
-    if (!run) return 'text-muted-foreground'
-    if (run.status === 'failed') return 'text-destructive'
-    if (run.status === 'partial') return 'text-yellow-600'
-    return 'text-green-600'
-  }
-
-  const sourceStatusLabel = (source: OpportunitySource): string => {
-    if (!source.is_enabled) return 'Disabled'
-    const run = lastRuns[source.id]
-    if (!run) return 'No runs yet'
-    if (run.status === 'failed') return 'Last run failed'
-    if (run.status === 'partial') return 'Partial'
-    if (run.status === 'running') return 'Running...'
-    return 'Online'
-  }
-
   const handleCreateDemoSource = async () => {
     if (!organization?.id) return
-    setIsCreatingSource(true)
+    setIsCreatingDemo(true)
     try {
       await opportunityHunterService.createSource(organization.id, {
         name: 'Rent Demo Source',
@@ -160,14 +157,83 @@ export function RentHunterDashboardPage() {
         is_enabled: true,
         module_type: 'rent',
       })
-      // Reload sources to reflect the new demo source
       const updatedSources = await opportunityHunterService.listSources(organization.id, 'rent')
       setSources(updatedSources)
       toast.success('Rent Demo Source created.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create demo source.')
     } finally {
-      setIsCreatingSource(false)
+      setIsCreatingDemo(false)
+    }
+  }
+
+  const handleCreateLimanPreset = async () => {
+    if (!organization?.id) return
+    setIsCreatingPreset(true)
+    try {
+      const result = await createLimanPreset(organization.id)
+      if (result.created) {
+        toast.success('Liman preset created! Navigate to run discovery.')
+      } else {
+        toast.info('Liman preset already exists. Opening existing brief.')
+      }
+      navigate(`/rent/hunter/${result.brief.id}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create preset.')
+    } finally {
+      setIsCreatingPreset(false)
+    }
+  }
+
+  const handleRunDiscovery = async (briefId: string) => {
+    if (!organization?.id) return
+    setRunningBriefIds((prev) => new Set(prev).add(briefId))
+    try {
+      const result = await triggerDiscoveryRun({ briefId, organizationId: organization.id })
+      toast.success(result.message ?? `Discovery complete: ${result.matchesFound ?? 0} matches.`)
+
+      // Reload brief stats
+      const stats = { ...briefStats }
+      const briefSources = stats[briefId]?.sources ?? []
+      const supabase = getSupabaseClient()
+
+      let lastRunDate: string | null = null
+      if (briefSources.length > 0 && supabase) {
+        const sourceIds = briefSources.map((s: OpportunitySource) => s.id)
+        const { data: runRows } = await supabase
+          .from('source_connector_runs')
+          .select('started_at')
+          .eq('organization_id', organization.id)
+          .in('source_id', sourceIds)
+          .order('started_at', { ascending: false })
+          .limit(1)
+        const rows = runRows as Array<{ started_at: string }> | null
+        if (rows && rows.length > 0) {
+          lastRunDate = rows[0].started_at
+        }
+      }
+
+      let matchCount = 0
+      if (supabase) {
+        const { data: matchRows } = await supabase
+          .from('opportunity_matches')
+          .select('id')
+          .eq('brief_id', briefId)
+          .eq('organization_id', organization.id)
+        const rows = matchRows as Array<{ id: string }> | null
+        matchCount = rows?.length ?? 0
+      }
+
+      stats[briefId] = { ...stats[briefId], lastRunDate, matchCount }
+      setBriefStats(stats)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Discovery run failed.')
+    } finally {
+      setRunningBriefIds((prev) => {
+        const next = new Set(prev)
+        next.delete(briefId)
+        return next
+      })
     }
   }
 
@@ -202,13 +268,18 @@ export function RentHunterDashboardPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => navigate('/rent/hunter/import-url')}>
-            <LinkIcon className="mr-2 h-4 w-4" />
-            Import Listing URL
-          </Button>
+          <ImportSearchDialog context={importContext} onNavigateToListings={() => navigate('/rent')} onNavigateToImportUrl={() => navigate('/rent/hunter/import-url')} onNavigateToNew={() => navigate('/rent/new')} />
           <Button onClick={() => navigate('/rent/hunter/new')} className="bg-accent text-accent-foreground hover:bg-accent/90">
             <Plus className="mr-2 h-4 w-4" />
             New Rent Brief
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleCreateLimanPreset}
+            disabled={isCreatingPreset}
+          >
+            <Compass className="mr-2 h-4 w-4" />
+            {isCreatingPreset ? 'Creating...' : 'Create My Novi Sad Rent Search'}
           </Button>
         </div>
       </div>
@@ -224,55 +295,12 @@ export function RentHunterDashboardPage() {
             variant="outline"
             className="mt-4"
             onClick={handleCreateDemoSource}
-            disabled={isCreatingSource}
+            disabled={isCreatingDemo}
           >
             <Database className="mr-2 h-4 w-4" />
-            {isCreatingSource ? 'Creating...' : 'Create Demo Rent Source'}
+            {isCreatingDemo ? 'Creating...' : 'Create Demo Rent Source'}
           </Button>
         </Card>
-      )}
-
-      {/* Rent Sources */}
-      {sources.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="font-display text-xl font-semibold flex items-center gap-2">
-            <Pulse className="h-5 w-5" />
-            Rent Sources
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {sources.map((source) => {
-              const lastRun = lastRuns[source.id]
-              const statusLabel = sourceStatusLabel(source)
-              const statusColor = sourceStatusColor(source)
-
-              return (
-                <Card key={source.id} className="p-4 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-medium text-sm truncate">{source.name}</h3>
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      {sourceTypeLabel(source.type)}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={`font-medium ${statusColor}`}>
-                      {statusLabel}
-                    </span>
-                    {lastRun?.started_at && (
-                      <span className="text-muted-foreground">
-                        · {new Date(lastRun.started_at).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                  {lastRun && lastRun.status !== 'failed' && (
-                    <p className="text-xs text-muted-foreground">
-                      {lastRun.opportunities_inserted ?? 0} inserted · {lastRun.opportunities_matched ?? 0} matched
-                    </p>
-                  )}
-                </Card>
-              )
-            })}
-          </div>
-        </div>
       )}
 
       {briefs.length === 0 ? (
@@ -294,11 +322,16 @@ export function RentHunterDashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             {briefs.map((brief) => {
               const moduleData = brief.module_data ?? {}
-              const matches = matchCounts[brief.id] ?? 0
+              const stats = briefStats[brief.id]
+              const sourceCount = stats?.sources.length ?? 0
+              const matchCount = stats?.matchCount ?? 0
+              const lastRunDate = stats?.lastRunDate ?? null
+              const isRunning = runningBriefIds.has(brief.id)
               const districts = (moduleData.preferred_districts ?? brief.districts ?? []).join(', ')
 
               return (
                 <Card key={brief.id} className="p-5 space-y-3 hover:shadow-md transition-shadow">
+                  {/* Header */}
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-display text-lg font-semibold">{brief.title}</h3>
                     <Badge variant={brief.is_active ? 'default' : 'secondary'}>
@@ -306,6 +339,7 @@ export function RentHunterDashboardPage() {
                     </Badge>
                   </div>
 
+                  {/* Criteria summary */}
                   <div className="space-y-1 text-sm">
                     <p>
                       <span className="text-muted-foreground">City:</span>{' '}
@@ -318,9 +352,8 @@ export function RentHunterDashboardPage() {
                       </p>
                     )}
                     <p>
-                      <span className="text-muted-foreground">Max Rent:</span>{' '}
-                      {brief.currency ?? 'EUR'} {brief.max_price ?? '—'}
-                      {brief.min_price ? ` (min ${brief.currency ?? 'EUR'} ${brief.min_price})` : ''}
+                      <span className="text-muted-foreground">Budget:</span>{' '}
+                      {brief.currency ?? 'EUR'} {brief.min_price ? `${brief.min_price} – ` : ''}{brief.max_price ?? '—'}
                     </p>
                     <p>
                       <span className="text-muted-foreground">Size:</span>{' '}
@@ -334,6 +367,7 @@ export function RentHunterDashboardPage() {
                     )}
                   </div>
 
+                  {/* Badges */}
                   <div className="flex flex-wrap gap-1.5">
                     {moduleData.furnished_required && <Badge variant="outline">Furnished</Badge>}
                     {moduleData.parking_required && <Badge variant="outline">Parking</Badge>}
@@ -344,15 +378,57 @@ export function RentHunterDashboardPage() {
                     {moduleData.quiet_important && <Badge variant="outline">Quiet</Badge>}
                   </div>
 
-                  <div className="flex items-center justify-between pt-2">
+                  {/* Sources */}
+                  <div className="text-xs text-muted-foreground border-t pt-2 space-y-1">
+                    <p className="font-medium">
+                      {sourceCount > 0
+                        ? `${sourceCount} source${sourceCount !== 1 ? 's' : ''}`
+                        : 'No sources assigned'}
+                    </p>
+                    {sourceCount > 0 && (
+                      <p className="truncate">
+                        {stats!.sources
+                          .slice(0, 3)
+                          .map((s) => s.name)
+                          .join(', ')}
+                        {sourceCount > 3 && ` +${sourceCount - 3} more`}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Stats row */}
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    {lastRunDate && (
+                      <span>Last run: {new Date(lastRunDate).toLocaleDateString()}</span>
+                    )}
+                    {matchCount > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {matchCount} match{matchCount !== 1 ? 'es' : ''}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex gap-2">
-                      {matches > 0 && (
-                        <Badge variant="secondary">{matches} match{matches !== 1 ? 'es' : ''}</Badge>
-                      )}
+                      <Button size="sm" variant="outline" asChild>
+                        <Link to={`/rent/hunter/${brief.id}`}>View Brief</Link>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRunDiscovery(brief.id)}
+                        disabled={isRunning}
+                      >
+                        <MagnifyingGlass className="mr-1 h-3 w-3" />
+                        {isRunning ? 'Updating...' : 'Update Opportunities'}
+                      </Button>
                     </div>
-                    <Button size="sm" variant="outline" asChild>
-                      <Link to={`/rent/hunter/${brief.id}`}>View Brief</Link>
-                    </Button>
+                    {matchCount > 0 && (
+                      <Button size="sm" variant="ghost" asChild>
+                        <Link to={`/rent/hunter/${brief.id}`}>View Matches</Link>
+                      </Button>
+                    )}
                   </div>
                 </Card>
               )

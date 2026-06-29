@@ -43,7 +43,7 @@ export const HUNTER_MODULE_CONFIGS: Record<ModuleId, HunterModuleConfig> = {
     displayName: 'Rent Hunter',
     baseRoute: '/rent/hunter',
     newBriefRoute: '/rent/hunter/new',
-    supportedSourceTypes: ['rent_demo', 'manual_url', 'csv_import'],
+    supportedSourceTypes: ['rent_demo', 'manual_url', 'csv_import', 'live_scraper', 'portal_search', 'saved_search', 'rent_web_search'],
     showDemoBriefs: false,
     showCleanup: false,
   },

@@ -34,9 +34,12 @@ export interface RentalApartment {
   nextAction?: string
   score?: number
   recommendation?: RentRecommendation
+  confidenceScore?: number
+  missingData?: Array<{ field: string; label: string; severity: string; impact: string }>
+  scoreBreakdown?: Array<{ dimension: string; label: string; score: number; weight: number; weightedScore: number; explanation: string }>
 }
 
-export type RentRecommendation = 'Excellent Fit' | 'Good Fit' | 'Watch' | 'Avoid'
+export type RentRecommendation = 'Excellent Fit' | 'Good Fit' | 'Possible Fit' | 'Weak Fit' | 'Reject' | 'Watch' | 'Avoid'
 
 export interface RentPreferences {
   maxBudget: number

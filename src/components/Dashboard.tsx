@@ -1,278 +1,258 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Brain, TrendUp, Target, Buildings, Wallet } from '@phosphor-icons/react'
-import { MetricCard } from './MetricCard'
-import { ScoreGauge } from './ScoreGauge'
-import { AIInsightCard } from './AIInsightCard'
+import { useNavigate } from 'react-router-dom'
+import {
+  Brain,
+  Compass,
+  Eye,
+  Lightning,
+  MagnifyingGlass,
+  Plus,
+  Target,
+  TrendUp,
+  Warning,
+} from '@phosphor-icons/react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { opportunityWorkspaceService, type OpportunityWorkspaceItem } from '@/services/supabase/opportunityWorkspace.service'
+import { normalizeRentListing } from '@/modules/opportunity-intelligence/normalizers/rentNormalizer'
+import { scoreRentOpportunity } from '@/modules/opportunity-intelligence/scoring/rentScorer'
+import { toRentModulePreferences } from '@/modules/opportunity-intelligence/configs/rentModuleConfig'
+import type { RentModulePreferences } from '@/modules/opportunity-intelligence/configs/rentModuleConfig'
+import type { OpportunityScore, RecommendationLevel } from '@/modules/opportunity-intelligence/types'
+import { opportunityRepository } from '@/modules/rent/repositories/OpportunityRepository'
+import type { RentalApartment } from '@/modules/rent/types'
+import { DEFAULT_RENT_PREFERENCES } from '@/modules/rent/types'
 import { useAuth } from '@/hooks/useAuth'
-import type { AIInsight, DashboardMetrics, OpportunityStatus } from '@/lib/types'
-import { opportunityStageLabels } from '@/lib/constants/opportunityStages'
+
+interface ScoredItem {
+  apartment: RentalApartment
+  score: OpportunityScore
+}
+
+const recVariant: Record<RecommendationLevel, 'default' | 'secondary' | 'outline' | 'destructive'> = {
+  'Excellent Fit': 'default',
+  'Good Fit': 'secondary',
+  'Possible Fit': 'outline',
+  'Weak Fit': 'destructive',
+  'Reject': 'destructive',
+}
 
 interface DashboardProps {
   onNavigate: (page: string, data?: unknown) => void
 }
 
-const statusConfig: Record<OpportunityStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  lead: { label: opportunityStageLabels.lead, variant: 'secondary' },
-  interested: { label: opportunityStageLabels.interested, variant: 'outline' },
-  negotiating: { label: opportunityStageLabels.negotiating, variant: 'default' },
-  'offer-made': { label: opportunityStageLabels['offer-made'], variant: 'default' },
-  'due-diligence': { label: 'Due Diligence', variant: 'default' },
-  purchased: { label: opportunityStageLabels.purchased, variant: 'default' },
-  sold: { label: opportunityStageLabels.sold, variant: 'secondary' },
-  'rejected': { label: 'Rejected', variant: 'destructive' }
-}
-
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const { organization } = useAuth()
-  const [opportunities, setOpportunities] = useState<OpportunityWorkspaceItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const navigate = useNavigate()
+  const { user, organization } = useAuth()
+  const [apartments, setApartments] = useState<RentalApartment[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const loadDashboardData = async () => {
-      setIsLoading(true)
-
-      try {
-        const result = await opportunityWorkspaceService.getMyOpportunities({
-          organizationId: organization?.id,
-        })
-
-        setOpportunities(result.items)
-      } catch (error) {
-        console.error('Failed to load dashboard opportunities', error)
-        setOpportunities([])
-      } finally {
-        setIsLoading(false)
+    let cancelled = false
+    async function load() {
+      if (organization?.id && user?.id) {
+        try {
+          const r = await opportunityRepository.list({ organizationId: organization.id, userId: user.id })
+          if (!cancelled && r.success && r.data && r.data.length > 0) { setApartments(r.data); setLoading(false); return }
+        } catch {}
+      }
+      if (!cancelled) {
+        setApartments([])
+        setLoading(false)
       }
     }
+    load(); return () => { cancelled = true }
+  }, [organization?.id, user?.id])
+  const scored = useMemo<ScoredItem[]>(() => {
+    const prefs: RentModulePreferences = toRentModulePreferences(DEFAULT_RENT_PREFERENCES)
+    return apartments.map((a) => ({
+      apartment: a,
+      score: scoreRentOpportunity(normalizeRentListing(a), prefs),
+    })).sort((a, b) => b.score.totalScore - a.score.totalScore)
+  }, [apartments])
 
-    void loadDashboardData()
-  }, [organization?.id])
+  const kpis = useMemo(() => {
+    const total = scored.length
+    const highPriority = scored.filter((s) => s.score.recommendation === 'Excellent Fit' || s.score.recommendation === 'Good Fit').length
+    const needsAttention = scored.filter((s) =>
+      s.score.confidenceScore < 55 ||
+      s.score.missingData.some((m) => m.severity === 'required') ||
+      s.score.recommendation === 'Weak Fit'
+    ).length
+    const avgConfidence = total > 0 ? Math.round(scored.reduce((sum, s) => sum + s.score.confidenceScore, 0) / total) : 0
+    return { total, highPriority, needsAttention, avgConfidence }
+  }, [scored])
 
-  const metrics = useMemo<DashboardMetrics>(() => {
-    if (opportunities.length === 0) {
-      return {
-        totalOpportunities: 0,
-        averageScore: 0,
-        bestYield: 0,
-        portfolioValue: 0,
-        activeDeals: 0,
-        analyzedThisMonth: 0,
-      }
-    }
+  const needsAttentionItems = useMemo(() => {
+    return scored
+      .filter((s) =>
+        s.score.confidenceScore < 55 ||
+        s.score.missingData.some((m) => m.severity === 'required') ||
+        s.score.recommendation === 'Reject' ||
+        s.score.recommendation === 'Weak Fit'
+      )
+      .slice(0, 5)
+  }, [scored])
 
-    const scored = opportunities.filter((item) => item.analysis)
-    const averageScore = scored.length > 0
-      ? Math.round(scored.reduce((sum, item) => sum + (item.analysis?.score.overall ?? 0), 0) / scored.length)
-      : 0
+  const topOpportunities = useMemo(() => {
+    return scored
+      .filter((s) => s.score.recommendation === 'Excellent Fit' || s.score.recommendation === 'Good Fit')
+      .slice(0, 5)
+  }, [scored])
 
-    const bestYield = scored.length > 0
-      ? Math.max(...scored.map((item) => item.analysis?.rentalYieldEstimate.percentage ?? 0))
-      : 0
+  const recentItems = useMemo(() => scored.slice(0, 5), [scored])
 
-    const portfolioValue = opportunities.reduce((sum, item) => sum + item.askingPrice, 0)
-    const activeDeals = opportunities.filter((item) => ['due-diligence', 'negotiating', 'offer-made'].includes(item.stage)).length
-    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000)
-    const analyzedThisMonth = scored.filter((item) => {
-      const analyzedAt = item.analysis?.analyzedAt
-      return analyzedAt ? new Date(analyzedAt).getTime() >= thirtyDaysAgo : false
-    }).length
-
-    return {
-      totalOpportunities: opportunities.length,
-      averageScore,
-      bestYield: Number(bestYield.toFixed(1)),
-      portfolioValue,
-      activeDeals,
-      analyzedThisMonth,
-    }
-  }, [opportunities])
-
-  const insights = useMemo<AIInsight[]>(() => {
-    return opportunities
-      .filter((item) => item.analysis)
-      .slice(0, 3)
-      .map((item) => ({
-        id: `insight-${item.id}`,
-        type: 'opportunity',
-        priority: (item.analysis?.recommendation === 'buy' ? 'high' : 'medium') as 'high' | 'medium' | 'low',
-        title: `${item.title} recommendation: ${(item.analysis?.recommendation ?? 'watch').toUpperCase()}`,
-        description: item.analysis?.executiveSummary ?? 'AI analysis is available for this opportunity.',
-        propertyId: item.propertyId,
-        actionable: Boolean(item.analysis),
-        createdAt: item.updatedAt,
-      }))
-  }, [opportunities])
-
-  const recentOpportunities = useMemo(
-    () => [...opportunities].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 4),
-    [opportunities],
-  )
-
-  return (
-    <div className="space-y-6 sm:space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">Investment Dashboard</h1>
-          <p className="mt-2 text-sm sm:text-base text-foreground/70">AI-powered investment intelligence</p>
-        </div>
-        <div className="flex items-stretch sm:items-center">
-          <Button onClick={() => onNavigate('new-opportunity')} className="bg-accent text-accent-foreground hover:bg-accent/90 w-full sm:w-auto">
-            <Brain className="mr-2 h-5 w-5" />
-            Analyze Property
-          </Button>
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">EstateMind Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Loading opportunities...</p>
         </div>
       </div>
+    )
+  }
 
-      <div className="grid gap-4 sm:gap-6 grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Opportunities"
-          value={metrics.totalOpportunities}
-          icon={<Buildings className="h-5 w-5 sm:h-6 sm:w-6" weight="duotone" />}
-        />
-        <MetricCard
-          title="Average Score"
-          value={metrics.averageScore}
-          subtitle="/100"
-          icon={<Target className="h-5 w-5 sm:h-6 sm:w-6" weight="duotone" />}
-        />
-        <MetricCard
-          title="Best Yield"
-          value={`${metrics.bestYield}%`}
-          subtitle="Annual"
-          icon={<TrendUp className="h-5 w-5 sm:h-6 sm:w-6" weight="duotone" />}
-        />
-        <MetricCard
-          title="Portfolio Value"
-          value={`€${(metrics.portfolioValue / 1000000).toFixed(1)}M`}
-          icon={<Wallet className="h-5 w-5 sm:h-6 sm:w-6" weight="duotone" />}
-        />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2 p-4 sm:p-6">
-          <div className="mb-4 sm:mb-6 flex items-center">
-            <h2 className="font-display text-xl sm:text-2xl font-bold">Recent Opportunities</h2>
+  if (scored.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">EstateMind Dashboard</h1>
+          <p className="text-sm text-muted-foreground">AI Opportunity Intelligence</p>
+        </div>
+        <Card className="border-dashed p-10 text-center space-y-4">
+          <Target className="h-10 w-10 mx-auto text-foreground/30" />
+          <div>
+            <p className="font-display text-lg font-semibold">Welcome to EstateMind</p>
+            <p className="text-sm text-muted-foreground mt-1">Run Hunter to discover your first opportunity.</p>
           </div>
+          <div className="flex gap-2 justify-center">
+            <Button onClick={() => navigate('/hunter')}><Compass className="mr-2 h-4 w-4" />Run Hunter</Button>
+            <Button variant="outline" onClick={() => navigate('/rent/new')}><Plus className="mr-2 h-4 w-4" />Create Opportunity</Button>
+          </div>
+        </Card>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="space-y-1">
+        <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">EstateMind Dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          Your daily overview of opportunities, recommendations, evidence, confidence, and next actions.
+        </p>
+      </div>
 
-          <div className="space-y-3 sm:space-y-4">
-            {recentOpportunities.length === 0 && !isLoading ? (
-              <Card className="border-dashed p-6 text-center text-muted-foreground">
-                Analyze your first property opportunity
-              </Card>
-            ) : null}
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <KpiCard icon={<Target className="h-4 w-4" />} label="Total Opportunities" value={kpis.total} />
+        <KpiCard icon={<TrendUp className="h-4 w-4" />} label="High Priority" value={kpis.highPriority} color="text-emerald-600" />
+        <KpiCard icon={<Warning className="h-4 w-4" />} label="Needs Attention" value={kpis.needsAttention} color="text-amber-600" />
+        <KpiCard icon={<Brain className="h-4 w-4" />} label="Avg Confidence" value={`${kpis.avgConfidence}%`} />
+      </div>
 
-            {recentOpportunities.map((opp) => (
-              <div
-                key={opp.id}
-                onClick={() => {
-                  if (opp.analysis) {
-                    onNavigate('report', opp.analysis)
-                  }
-                }}
-                className="flex cursor-pointer items-start gap-3 sm:gap-4 rounded-lg border border-border bg-card/50 p-3 sm:p-4 transition-all hover:border-accent/50 hover:bg-card"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-3 sm:gap-4">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-sm sm:text-base truncate">{opp.property.title}</h3>
-                      <p className="mt-1 text-xs sm:text-sm text-muted-foreground truncate">
-                        {opp.property.city}, {opp.property.country}
-                      </p>
-                    </div>
-                    {opp.analysis && (
-                      <div className="flex-shrink-0">
-                        <ScoreGauge score={opp.analysis.score.overall} size="sm" showLabel={false} />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge {...statusConfig[opp.stage]}>{statusConfig[opp.stage].label}</Badge>
-                    {((opp.analysis?.opportunities ?? []).slice(0, 2)).map((tag) => (
-                      <Badge key={tag} variant="outline" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                    {(opp.analysis?.opportunities?.length ?? 0) > 2 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{(opp.analysis?.opportunities?.length ?? 0) - 2}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm">
-                    <span className="font-semibold whitespace-nowrap">
-                      {opp.currency} {opp.askingPrice.toLocaleString()}
-                    </span>
-                    <span className="text-muted-foreground hidden sm:inline">•</span>
-                    <span className="text-muted-foreground whitespace-nowrap">{opp.property.sizeSqm}m²</span>
-                    <span className="text-muted-foreground hidden sm:inline">•</span>
-                    <span className="text-muted-foreground whitespace-nowrap">{opp.property.bedrooms} bed</span>
-                    {opp.analysis && (
-                      <>
-                        <span className="text-muted-foreground hidden sm:inline">•</span>
-                        <span className="text-success font-medium whitespace-nowrap">
-                          {opp.analysis.rentalYieldEstimate.percentage}% yield
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+      {/* Today's Focus */}
+      {topOpportunities.length > 0 && (
+        <Card className="p-4 sm:p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4 text-accent" />
+            <h2 className="font-display text-lg font-bold">Today&apos;s Focus</h2>
+          </div>
+          <div className="space-y-2">
+            {topOpportunities.map((item) => (
+              <OpportunityRow key={item.apartment.id} item={item} onOpen={() => navigate('/rent/' + item.apartment.id)} />
             ))}
           </div>
         </Card>
+      )}
 
-        <div className="space-y-4 sm:space-y-6">
-          <Card className="p-4 sm:p-6">
-            <div className="mb-4 flex items-center gap-2">
-              <Brain className="h-5 w-5 text-accent" weight="duotone" />
-              <h2 className="font-display text-lg sm:text-xl font-bold">AI Insights</h2>
+      {/* Needs Attention */}
+      {needsAttentionItems.length > 0 && (
+        <Card className="p-4 sm:p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <Warning className="h-4 w-4 text-amber-600" />
+            <h2 className="font-display text-lg font-bold">Needs Attention</h2>
+          </div>
+          <div className="space-y-2">
+            {needsAttentionItems.map((item) => (
+              <OpportunityRow key={item.apartment.id} item={item} onOpen={() => navigate('/rent/' + item.apartment.id)} />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Recent Activity + Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Card className="p-4 sm:p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Lightning className="h-4 w-4 text-accent" />
+              <h2 className="font-display text-lg font-bold">Recent Activity</h2>
             </div>
-            <div className="space-y-3">
-              {insights.map((insight) => (
-                <AIInsightCard
-                  key={insight.id}
-                  insight={insight}
-                  onClick={() => {
-                    if (insight.propertyId) {
-                      const opp = opportunities.find(o => o.propertyId === insight.propertyId)
-                      if (opp?.analysis) {
-                        onNavigate('report', opp.analysis)
-                      }
-                    }
-                  }}
-                />
+            <div className="space-y-2">
+              {recentItems.map((item) => (
+                <OpportunityRow key={item.apartment.id} item={item} onOpen={() => navigate('/rent/' + item.apartment.id)} />
               ))}
-              {insights.length === 0 && !isLoading ? (
-                <p className="text-sm text-muted-foreground">AI insights will appear after your first analyzed opportunity.</p>
-              ) : null}
-            </div>
-          </Card>
-
-          <Card className="p-4 sm:p-6">
-            <h2 className="mb-4 font-display text-lg sm:text-xl font-bold">Active Deals</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs sm:text-sm text-muted-foreground">Due Diligence</span>
-                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'due-diligence').length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs sm:text-sm text-muted-foreground">Offer Stage</span>
-                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'negotiating').length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs sm:text-sm text-muted-foreground">Interested</span>
-                <span className="font-semibold">{opportunities.filter((item) => item.stage === 'interested').length}</span>
-              </div>
             </div>
           </Card>
         </div>
+
+        <Card className="p-4 sm:p-6 space-y-4">
+          <h2 className="font-display text-lg font-bold">Quick Actions</h2>
+          <div className="space-y-2">
+            <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/hunter')}>
+              <Compass className="mr-2 h-4 w-4" />Run Hunter
+            </Button>
+            <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/rent/new')}>
+              <Plus className="mr-2 h-4 w-4" />New Opportunity
+            </Button>
+            <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/decisions')}>
+              <MagnifyingGlass className="mr-2 h-4 w-4" />My Opportunities
+            </Button>
+            <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/rent/compare')}>
+              Compare Opportunities
+            </Button>
+            <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/reports')}>
+              <Brain className="mr-2 h-4 w-4" />AI Reports
+            </Button>
+          </div>
+        </Card>
       </div>
+    </div>
+  )
+}
+function KpiCard({ icon, label, value, color }: {
+  icon: React.ReactNode
+  label: string
+  value: number | string
+  color?: string
+}) {
+  return (
+    <Card className="p-4 space-y-2">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
+      </div>
+      <p className={`font-display text-2xl font-bold ${color ?? ''}`}>{value}</p>
+    </Card>
+  )
+}
+
+function OpportunityRow({ item, onOpen }: { item: ScoredItem; onOpen: () => void }) {
+  const { apartment: a, score: s } = item
+  return (
+    <div className="flex items-center gap-3 py-2 border-b last:border-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">{a.title}</p>
+        <p className="text-xs text-muted-foreground">{a.district}{a.city ? `, ${a.city}` : ''}</p>
+      </div>
+      <Badge variant={recVariant[s.recommendation]} className="text-xs shrink-0">{s.recommendation}</Badge>
+      <span className="text-xs text-muted-foreground shrink-0">{s.confidenceScore}%</span>
+      <span className="font-display text-sm font-bold shrink-0">{s.totalScore}</span>
+      <Button variant="ghost" size="sm" className="shrink-0 h-7 px-2 text-xs" onClick={onOpen}>
+        Open
+      </Button>
     </div>
   )
 }

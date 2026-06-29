@@ -722,6 +722,12 @@ const serpApiProvider: WebSearchProvider = {
   },
 }
 
+export const resolveWebSearchProvider = (input: ConnectorInput, config?: { provider?: string }): WebSearchProvider => {
+  const requested = (config?.provider ?? process.env.VITE_WEB_SEARCH_PROVIDER ?? '').toLowerCase()
+  if (requested === 'serpapi') return serpApiProvider
+  return tavilyProvider
+}
+
 const resolveProvider = (input: ConnectorInput, config: WebSearchConfig): WebSearchProvider => {
   const requested = (config.provider ?? process.env.VITE_WEB_SEARCH_PROVIDER ?? '').toLowerCase()
   if (requested === 'serpapi') return serpApiProvider

@@ -5,13 +5,14 @@
  * using OpportunityWorkspaceService module-aware methods.
  *
  * Does NOT import Supabase client directly.
- * Does NOT touch rentStorage.ts (localStorage stays untouched).
+ * Does NOT touch rentStorage.ts (No longer used for data persistence).
  */
 
 import type { RentalApartment, RentalStatus } from '../types'
 import { opportunityWorkspaceService } from '@/services/supabase/opportunityWorkspace.service'
 import type { CreateOpportunityInput } from '@/services/supabase/opportunityWorkspace.service'
 import type { Opportunity } from '@/lib/types'
+import { getSupabaseClient } from '@/services/supabase/client'
 
 // ── Stage ↔ Status mapping ─────────────────────────────────────────
 
@@ -344,14 +345,30 @@ class RentSupabaseAdapter {
   }
 
   async deleteRentApartment(id: string, context: AdapterContext): Promise<RentAdapterResult<boolean>> {
-    // Delete is not yet supported by OpportunityWorkspaceService.
-    // Return a safe placeholder result.
-    void id
-    void context
-    return {
-      success: false,
-      error: 'Delete is not yet supported for Supabase-backed apartments. This will be added in a future phase.',
-    }
+    try {
+      const supabase = getSupabaseClient()
+      if (!supabase) return { success: false, error: 'Supabase unavailable.' }
+      try { await supabase.from('notes').delete().eq('opportunity_id', id).eq('organization_id', context.organizationId) } catch {}
+      try { await supabase.from('ai_findings').delete().eq('opportunity_id', id).eq('organization_id', context.organizationId) } catch {}
+      const { error } = await supabase.from('opportunities').delete().eq('id', id).eq('organization_id', context.organizationId)
+      if (error) return { success: false, error: error.message }
+      return { success: true, data: true }
+    } catch (e) { return { success: false, error: e instanceof Error ? e.message : 'Delete failed.' } }
+  }
+
+  async existsBySourceUrl(sourceUrl: string, context: AdapterContext): Promise<boolean> {
+    try {
+      const supabase = getSupabaseClient()
+      if (!supabase || !sourceUrl) return false
+      // Check properties table for matching listing_url
+      const { data } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('organization_id', context.organizationId)
+        .eq('listing_url', sourceUrl)
+        .limit(1)
+      return (data ?? []).length > 0
+    } catch { return false }
   }
 }
 

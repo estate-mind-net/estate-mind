@@ -35,6 +35,7 @@ export interface MatchEvaluation {
   isRejected: boolean
   suggestedNextStep: string
   rankScore: number
+  qualityLabels?: string[]
 }
 
 export interface DiscoveryRunResult {
