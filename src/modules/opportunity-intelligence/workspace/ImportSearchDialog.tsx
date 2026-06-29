@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Compass, Link, Upload, Plus, CheckCircle, Target } from '@phosphor-icons/react'
 import { portalImportEngine } from '../import/PortalImportEngine'
+import { portalRegistry } from '../import/PortalRegistry'
+import '../import/bootstrap'
 import type { EnrichmentProgress } from '../enrichment/EnrichmentResult'
 import type { DataContext } from '../auth/ContextValidation'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -34,14 +36,20 @@ export interface ImportSummary {
 
 type DialogStep = 'input' | 'validating' | 'summary'
 
-const SUPPORTED_PORTALS = [{ id: '4zida', name: '4zida', domain: '4zida.rs' }]
+const SUPPORTED_PORTALS = [
+  { id: '4zida', name: '4zida', domain: '4zida.rs', status: 'active' as const },
+  { id: 'halo-oglasi', name: 'Halo Oglasi', domain: 'halooglasi.com', status: 'active' as const },
+]
+const FUTURE_PORTALS = [
+  { id: 'city-expert', name: 'City Expert', domain: 'city-expert.net' },
+  { id: 'nekretnine', name: 'Nekretnine.rs', domain: 'nekretnine.rs' },
+  { id: 'oglasi', name: 'Oglasi.rs', domain: 'oglasi.rs' },
+]
 
 function detectPortal(url: string): { portal: string; valid: boolean } {
-  try {
-    const parsed = new URL(url)
-    for (const p of SUPPORTED_PORTALS) { if (parsed.hostname.includes(p.domain)) return { portal: p.name, valid: true } }
-    return { portal: '', valid: false }
-  } catch { return { portal: '', valid: false } }
+  const importer = portalRegistry.findByUrl(url)
+  if (importer) return { portal: importer.portalName, valid: true }
+  return { portal: '', valid: false }
 }
 
 export function ImportSearchDialog({ trigger, context, onImportComplete, onNavigateToImportUrl, onNavigateToNew }: ImportSearchDialogProps) {
@@ -59,7 +67,7 @@ export function ImportSearchDialog({ trigger, context, onImportComplete, onNavig
     if (!searchUrl.trim()) { setError('Please paste a search URL.'); return }
     if (!context) { setError('You must be signed in to import.'); return }
     const { portal, valid } = detectPortal(searchUrl)
-    if (!valid) { setError('This portal is not yet supported. Currently supported: 4zida.rs'); return }
+    if (!valid) { const supported = portalRegistry.listAll().map(p => p.portalName).join(', '); setError(`This portal is not yet supported. Currently supported: ${supported}`); return }
     console.log('[ImportSearchDialog] Pasted URL:', searchUrl)
     console.log('[ImportSearchDialog] Passing URL to PortalImportEngine:', searchUrl)
     setStep('validating')
@@ -96,8 +104,11 @@ export function ImportSearchDialog({ trigger, context, onImportComplete, onNavig
               {error && <p className="text-xs text-destructive">{error}</p>}
             </div>
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Currently supported</p>
-              <div className="flex gap-2">{SUPPORTED_PORTALS.map((p) => <Badge key={p.id} variant="secondary" className="text-xs">{p.name}</Badge>)}</div>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Supported portals</p>
+              <div className="flex flex-wrap gap-2">
+                {SUPPORTED_PORTALS.map((p) => <Badge key={p.id} variant="secondary" className="text-xs gap-1"><span className="text-emerald-600">✓</span>{p.name}</Badge>)}
+                {FUTURE_PORTALS.map((p) => <Badge key={p.id} variant="outline" className="text-xs opacity-50">{p.name}</Badge>)}
+              </div>
             </div>
             <Button onClick={handleValidate} disabled={!context} className="w-full bg-accent text-accent-foreground hover:bg-accent/90"><Compass className="mr-2 h-4 w-4" />Import Search</Button>
             <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>

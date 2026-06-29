@@ -7,12 +7,35 @@
 
 import type { PortalImporter } from './PortalImporter'
 
+export interface PortalCapabilities {
+  id: string
+  name: string
+  domain: string
+  supportsSearch: boolean
+  supportsDetail: boolean
+  supportsImages: boolean
+  supportsPagination: boolean
+  supportsMonitoring: boolean
+}
+
 class PortalRegistry {
   private importers: Map<string, PortalImporter> = new Map()
+  private capabilities: Map<string, PortalCapabilities> = new Map()
 
-  /** Register a portal importer. */
-  register(importer: PortalImporter): void {
+  /** Register a portal importer with optional capabilities. */
+  register(importer: PortalImporter, caps?: Partial<PortalCapabilities>): void {
     this.importers.set(importer.portalId, importer)
+    const defaults: PortalCapabilities = {
+      id: importer.portalId,
+      name: importer.portalName,
+      domain: '',
+      supportsSearch: true,
+      supportsDetail: true,
+      supportsImages: false,
+      supportsPagination: true,
+      supportsMonitoring: false,
+    }
+    this.capabilities.set(importer.portalId, { ...defaults, ...caps })
   }
 
   /** Find the importer that can handle the given URL. */
@@ -30,6 +53,11 @@ class PortalRegistry {
     return this.importers.get(portalId) ?? null
   }
 
+  /** Get capabilities for a portal. */
+  getCapabilities(portalId: string): PortalCapabilities | null {
+    return this.capabilities.get(portalId) ?? null
+  }
+
   /** List all registered portal IDs. */
   listPortals(): string[] {
     return [...this.importers.keys()]
@@ -38,6 +66,11 @@ class PortalRegistry {
   /** List all registered importers. */
   listAll(): PortalImporter[] {
     return [...this.importers.values()]
+  }
+
+  /** List all registered portal capabilities. */
+  listAllCapabilities(): PortalCapabilities[] {
+    return [...this.capabilities.values()]
   }
 }
 

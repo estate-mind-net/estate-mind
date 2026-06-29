@@ -10,6 +10,7 @@ import type { EnrichedListing } from './EnrichedListing'
 import type { EnrichmentResult, BatchEnrichmentResult, EnrichmentProgress } from './EnrichmentResult'
 import type { ExtractedListing } from '../import/PortalImporter'
 import { FourZidaListingParser } from './connectors/FourZidaListingParser'
+import { HaloOglasiListingParser } from './connectors/HaloOglasiListingParser'
 import { fetchUrlProxy } from '@/lib/fetchUrlProxy'
 
 type ProgressCallback = (progress: EnrichmentProgress) => void
@@ -27,7 +28,7 @@ const DEFAULT_CONFIG: EnrichmentConfig = {
 }
 
 export class ListingEnrichmentEngine {
-  private parsers: ListingParser[] = [new FourZidaListingParser()]
+  private parsers: ListingParser[] = [new FourZidaListingParser(), new HaloOglasiListingParser()]
 
   registerParser(parser: ListingParser): void {
     this.parsers.push(parser)
